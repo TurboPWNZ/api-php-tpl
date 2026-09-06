@@ -1,72 +1,92 @@
 #!/usr/bin/env php
 <?php
+/**
+ * Simple migration runner for standalone illuminate/database.
+ *
+ * Usage:
+ *   php artisan migrate          — run pending migrations
+ *   php artisan migrate:rollback — rollback last batch
+ *   php artisan migrate:refresh  — rollback all + re-migrate
+ *   php artisan migrate:status   — show migration status
+ */
 
-require_once __DIR__ . '/vendor/autoload.php';
+require __DIR__ . '/vendor/autoload.php';
 
-use Api\Migration;
-use Api\db\MigrationManager;
-use Api\Configurator;
+use Api\db\DatabaseManager;
+use Illuminate\Database\ConnectionResolver;
+use Illuminate\Database\Migrations\Migrator;
+use Illuminate\Filesystem\Filesystem;
 
-$argv = $_SERVER['argv'];
+// ─── Boot capsule ───────────────────────────────────────────────────────────
 
-if (count($argv) < 2 || $argv[1] !== 'migrate') {
-    echo "Usage: php artisan migrate\n";
-    exit(1);
-}
+$capsule = DatabaseManager::boot();
+$connection = $capsule->getConnection();
 
-$config = Configurator::load();
-$pdo = new \PDO(
-    $config['db']['dsn'],
-    $config['db']['user'],
-    $config['db']['password'],
-    [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
+// ─── Setup migration repository ─────────────────────────────────────────────
+
+$resolver = new ConnectionResolver();
+$resolver->addConnection('default', $connection);
+$resolver->setDefaultConnection('default');
+
+$repo = new \Illuminate\Database\Migrations\DatabaseMigrationRepository(
+    $resolver,
+    'migrations'
 );
 
-$migrationsDir = __DIR__ . '/migrations';
-
-$migrator = new MigrationManager($pdo);
-
-// Создаем таблицу миграций, если нет
-$migrator->createTable();
-
-$executed = $migrator->getExecutedMigrations();
-
-// Загружаем все файлы миграций
-$files = glob($migrationsDir . '/*.php');
-$pending = [];
-
-foreach ($files as $file) {
-    $className = pathinfo($file, PATHINFO_FILENAME);
-    require_once $file;
-
-    if (!in_array($className, $executed)) {
-        $pending[] = $className;
-    }
+if (!$repo->repositoryExists()) {
+    $repo->createRepository();
 }
 
-if (empty($pending)) {
-    echo "No pending migrations.\n";
-    exit(0);
-}
+// ─── Setup migrator ──────────────────────────────────────────────────────────
 
-echo "Running migrations: " . implode(', ', $pending) . "\n";
+$migrator = new Migrator(
+    $repo,
+    $resolver,
+    new Filesystem()
+);
 
-foreach ($pending as $className) {
-    try {
-        $reflection = new ReflectionClass($className);
-        if (!$reflection->isSubclassOf(Migration::class)) {
-            throw new RuntimeException("$className must extend Migration");
+$paths = [__DIR__ . '/database/migrations'];
+
+// ─── Commands ────────────────────────────────────────────────────────────────
+
+$command = $argv[1] ?? 'migrate';
+
+switch ($command) {
+    case 'migrate':
+        $migrator->run($paths);
+        echo "Migration complete.\n";
+        break;
+
+    case 'migrate:rollback':
+        $migrator->rollback($paths);
+        echo "Rollback complete.\n";
+        break;
+
+    case 'migrate:refresh':
+        $migrator->reset($paths);
+        $migrator->run($paths);
+        echo "Refresh complete.\n";
+        break;
+
+    case 'migrate:status':
+        $ran = $repo->getRan();
+        $files = array_map(
+            fn($f) => basename($f, '.php'),
+            glob(__DIR__ . '/database/migrations/*.php') ?: []
+        );
+        sort($files);
+
+        if (empty($files)) {
+            echo "No migrations found.\n";
+        } else {
+            foreach ($files as $file) {
+                $status = in_array($file, $ran) ? '[Done]' : '[Pending]';
+                printf("%s %s\n", $status, $file);
+            }
         }
+        break;
 
-        $instance = $reflection->newInstance();
-        $instance->up($pdo);
-        $migrator->recordMigration($className);
-
-        echo "✓ Migration $className executed\n";
-    } catch (Exception $e) {
-        echo "✗ Migration $className failed: " . $e->getMessage() . "\n";
+    default:
+        echo "Usage: php artisan <migrate|migrate:rollback|migrate:refresh|migrate:status>\n";
         exit(1);
-    }
 }
-
-echo "All migrations completed successfully.\n";

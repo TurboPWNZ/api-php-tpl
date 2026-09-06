@@ -19,12 +19,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 $request = Request::createFromGlobals();
 
-// Initialize configuration and JWT
+// Initialize configuration, JWT and Database
 require_once __DIR__ . '/src/Configurator.php';
 require_once __DIR__ . '/src/JwtHelper.php';
+require_once __DIR__ . '/src/db/DatabaseManager.php';
 
 $config = \Api\Configurator::load();
 \Api\JwtHelper::init($config);
+\Api\db\DatabaseManager::boot();
 
 $dispatcher = require __DIR__.'/src/routes/api.php';
 

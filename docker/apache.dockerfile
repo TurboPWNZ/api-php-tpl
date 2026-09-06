@@ -6,9 +6,9 @@ RUN a2enmod rewrite && \
 
 # Extensions + Composer
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends zip unzip libzip-dev git curl && \
+    apt-get install -y --no-install-recommends zip unzip libzip-dev git curl libpq-dev && \
     rm -rf /var/lib/apt/lists/* && \
-    docker-php-ext-install zip
+    docker-php-ext-install zip pdo_mysql
 
 # Install Composer globally
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer

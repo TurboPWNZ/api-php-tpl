@@ -6,7 +6,8 @@
     "symfony/validator": "^6.4",
     "firebase/php-jwt": "^7.1",
     "monolog/monolog": "^3.10",
-    "illuminate/database": "^12.69"
+    "illuminate/database": "^12.69",
+    "illuminate/filesystem": "^12.69"
   },
   "autoload": {
     "psr-4": {

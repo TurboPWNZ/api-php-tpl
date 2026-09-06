@@ -8,11 +8,18 @@ class Configurator
     public static function load()
     {
         if (empty(self::$_config)) {
-            self::$_config = require_once __DIR__ . '/config/config.php.tpl';
+            $configFile = __DIR__ . '/config/config.php';
+            if (!file_exists($configFile)) {
+                $configFile = __DIR__ . '/config/config.php.tpl';
+            }
+            self::$_config = require_once $configFile;
 
             // Merge mail config
-            $mailConfig = require_once __DIR__ . '/config/mail.php.tpl';
-            self::$_config['mail'] = $mailConfig;
+            $mailFile = __DIR__ . '/config/mail.php';
+            if (!file_exists($mailFile)) {
+                $mailFile = __DIR__ . '/config/mail.php.tpl';
+            }
+            self::$_config['mail'] = require_once $mailFile;
         }
 
         return self::$_config;

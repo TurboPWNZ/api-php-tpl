@@ -2,48 +2,86 @@
 
 namespace Api\db;
 
-class Payment extends AbstractTable
+use Illuminate\Database\Eloquent\Model;
+
+class Payment extends Model
 {
-    const STATUS_PENDING = 'pending';
+    const STATUS_PENDING   = 'pending';
     const STATUS_COMPLETED = 'completed';
-    const STATUS_FAILED = 'failed';
+    const STATUS_FAILED    = 'failed';
 
-    protected string $_table = 'payments';
+    protected $table = 'payments';
 
-    protected string $id = 'id';
+    protected $keyType = 'int';
+    public $increments = true;
 
-    public function updatePaymentStatus(string $orderId, string $status): bool
+    protected $fillable = [
+        'user_id',
+        'order_id',
+        'provider',
+        'amount',
+        'currency',
+        'status',
+        'payload',
+    ];
+
+    protected $casts = [
+        'amount'  => 'float',
+        'payload' => 'array',
+    ];
+
+    protected $hidden = ['payload'];
+
+    // ─── Scopes ─────────────────────────────────────────────────────────────
+
+    public function scopePending($query)
     {
-        return $this->update(
-            'order_id = :orderId',
-            [
-                'order_id' => $orderId,
-                'status' => $status
-            ]
-        ) > 0;
+        return $query->where('status', self::STATUS_PENDING);
     }
 
-    public function getPendingPayments(): array
+    public function scopeCompleted($query)
     {
-        return $this->findAll(
-            'status = :status',
-            ['status' => 'pending'],
-            'created_at ASC'
-        );
+        return $query->where('status', self::STATUS_COMPLETED);
     }
 
-    public function getPaymentsByUser(int $userId, int $limit = 10, int $offset = 0): array
+    public function scopeForUser($query, int $userId)
     {
-        $stmt = static::$pdo->prepare(
-            "SELECT * FROM `{$this->_table}` WHERE user_id = :userId AND `status` = 'completed' 
-                      ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
-        );
-        $stmt->bindValue(':userId', $userId, \PDO::PARAM_INT);
-        $stmt->bindValue(':limit', $limit, \PDO::PARAM_INT);
-        $stmt->bindValue(':offset', $offset, \PDO::PARAM_INT);
+        return $query->where('user_id', $userId);
+    }
 
-        $stmt->execute();
+    // ─── Methods ────────────────────────────────────────────────────────────
 
-        return $stmt->fetchAll();
+    /**
+     * Обновить статус оплаты по order_id
+     */
+    public static function updatePaymentStatus(string $orderId, string $status): bool
+    {
+        return static::where('order_id', $orderId)
+            ->update(['status' => $status]) > 0;
+    }
+
+    /**
+     * Получить все ожидающие оплаты (по возрастанию)
+     */
+    public static function getPendingPayments(): array
+    {
+        return static::pending()
+            ->orderBy('created_at', 'ASC')
+            ->get()
+            ->toArray();
+    }
+
+    /**
+     * Получить оплаты пользователя (только completed, по убыванию)
+     */
+    public static function getPaymentsByUser(int $userId, int $limit = 10, int $offset = 0): array
+    {
+        return static::forUser($userId)
+            ->completed()
+            ->orderBy('created_at', 'DESC')
+            ->offset($offset)
+            ->limit($limit)
+            ->get()
+            ->toArray();
     }
 }
