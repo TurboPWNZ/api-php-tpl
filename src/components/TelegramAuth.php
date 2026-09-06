@@ -28,10 +28,6 @@ class TelegramAuth
         $receivedHash = $data['hash'];
         unset($data['hash']);
 
-        // signature — отдельная подпись для Ed25519, для стандартной
-        // проверки через bot token она не нужна
-        unset($data['signature']);
-
         ksort($data);
 
         $dataCheckString = [];

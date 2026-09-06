@@ -5,6 +5,7 @@ namespace Api\app\controllers;
 use Api\components\Log;
 use Api\components\TelegramAuth;
 use Api\Configurator;
+use Api\db\Account;
 use Api\JwtHelper;
 use Api\db\DatabaseManager;
 use Symfony\Component\HttpFoundation\Request;
@@ -16,6 +17,19 @@ class AuthController
     {
         return new JsonResponse([
             'success' => true,
+        ]);
+    }
+
+    public function getAccount(Request $request): JsonResponse
+    {
+        $account = (new Account())->findByPk((int)$request->attributes->get('user')['user_id']);
+        return new JsonResponse([
+            'success' => true,
+            'user' => [
+                'id' => (int)$request->attributes->get('user')['user_id'],
+                'email' => $request->attributes->get('user')['email'],
+                'balance' => $account['balance'],
+            ]
         ]);
     }
 
@@ -38,7 +52,6 @@ class AuthController
 
         $botToken = $config['params']['gtBotToken'] ?? '';
         if (empty($botToken)) {
-            Log::get(Log::DEBUG)->error('Telegram bot token is not configured');
 
             return new JsonResponse([
                 'success' => false,
@@ -67,42 +80,6 @@ class AuthController
 
         $userId = (int)$user['id'];
 
-        Log::get(Log::DEBUG)->info('Telegram login validated', [
-            'telegram_user_id' => $userId,
-            'username' => $user['username'] ?? null,
-        ]);
-
-        // Upsert user in DB
-        $row = [
-            'id' => $userId,
-            'first_name' => $user['first_name'] ?? '',
-            'last_name' => $user['last_name'] ?? '',
-            'username' => $user['username'] ?? '',
-            'language_code' => $user['language_code'] ?? '',
-            'photo_url' => $user['photo_url'] ?? null,
-            'auth_date' => date('Y-m-d H:i:s', $telegram['auth_date'] ?? time()),
-            'dateAuth' => date('Y-m-d H:i:s'),
-        ];
-
-        try {
-            $table = DatabaseManager::connection()->table('users');
-
-            if ($table->where('id', $row['id'])->exists()) {
-                $table->where('id', $row['id'])->update($row);
-            } else {
-                $table->insert(array_merge($row, [
-                    'created_at' => $row['dateAuth'],
-                    'updated_at' => $row['dateAuth'],
-                ]));
-            }
-        } catch (\Throwable $e) {
-            // DB is not critical for login: token is still issued
-            Log::get(Log::DEBUG)->error('Failed to upsert telegram user in DB', [
-                'error' => $e->getMessage(),
-                'user_id' => $userId,
-            ]);
-        }
-
         // Generate JWT token
         JwtHelper::init($config);
 
@@ -117,12 +94,12 @@ class AuthController
             'token' => $token,
             'user' => [
                 'id' => $userId,
-                'first_name' => $user['first_name'] ?? '',
-                'last_name' => $user['last_name'] ?? '',
+//                'first_name' => $user['first_name'] ?? '',
+//                'last_name' => $user['last_name'] ?? '',
                 'username' => $user['username'] ?? '',
-                'language_code' => $user['language_code'] ?? '',
-                'photo_url' => $user['photo_url'] ?? null,
-                'chat_type' => $telegram['chat_type'] ?? null,
+//                'language_code' => $user['language_code'] ?? '',
+//                'photo_url' => $user['photo_url'] ?? null,
+//                'chat_type' => $telegram['chat_type'] ?? null,
             ],
         ]);
     }
