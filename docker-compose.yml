@@ -1,0 +1,9 @@
+services:
+  apache:
+    build:
+      context: .
+      dockerfile: docker/apache.dockerfile
+    ports:
+      - "8097:80"
+    volumes:
+      - ./:/var/www/html

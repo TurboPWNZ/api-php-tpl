@@ -1,0 +1,18 @@
+Options -Indexes
+DirectoryIndex index.php
+
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+
+<IfModule mod_rewrite.c>
+
+    RewriteEngine On
+
+    # Если существует файл - отдаем его
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Все остальные запросы отправляем в index.php
+    RewriteRule ^ index.php [QSA,L]
+
+</IfModule>

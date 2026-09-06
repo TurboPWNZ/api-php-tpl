@@ -1,0 +1,72 @@
+#!/usr/bin/env php
+<?php
+
+require_once __DIR__ . '/vendor/autoload.php';
+
+use Api\Migration;
+use Api\db\MigrationManager;
+use Api\Configurator;
+
+$argv = $_SERVER['argv'];
+
+if (count($argv) < 2 || $argv[1] !== 'migrate') {
+    echo "Usage: php artisan migrate\n";
+    exit(1);
+}
+
+$config = Configurator::load();
+$pdo = new \PDO(
+    $config['db']['dsn'],
+    $config['db']['user'],
+    $config['db']['password'],
+    [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION]
+);
+
+$migrationsDir = __DIR__ . '/migrations';
+
+$migrator = new MigrationManager($pdo);
+
+// Создаем таблицу миграций, если нет
+$migrator->createTable();
+
+$executed = $migrator->getExecutedMigrations();
+
+// Загружаем все файлы миграций
+$files = glob($migrationsDir . '/*.php');
+$pending = [];
+
+foreach ($files as $file) {
+    $className = pathinfo($file, PATHINFO_FILENAME);
+    require_once $file;
+
+    if (!in_array($className, $executed)) {
+        $pending[] = $className;
+    }
+}
+
+if (empty($pending)) {
+    echo "No pending migrations.\n";
+    exit(0);
+}
+
+echo "Running migrations: " . implode(', ', $pending) . "\n";
+
+foreach ($pending as $className) {
+    try {
+        $reflection = new ReflectionClass($className);
+        if (!$reflection->isSubclassOf(Migration::class)) {
+            throw new RuntimeException("$className must extend Migration");
+        }
+
+        $instance = $reflection->newInstance();
+        $instance->up($pdo);
+        $migrator->recordMigration($className);
+
+        echo "✓ Migration $className executed\n";
+    } catch (Exception $e) {
+        echo "✗ Migration $className failed: " . $e->getMessage() . "\n";
+        exit(1);
+    }
+}
+
+echo "All migrations completed successfully.\n";
