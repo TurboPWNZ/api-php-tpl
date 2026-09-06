@@ -7,8 +7,13 @@ return [
         'password' => '',
     ],
     'params' => [
+        'gameInitBalance' => 1000,
         'captchaSiteKey' => '6LeXXX',
         'captchaSecretKey' => '6LeXXX',
+        // Игровая логика (см. spincalculate.md)
+        'gameMinBet' => 10,
+        'gameMaxBet' => 200,
+        'gameMaxLines' => 7,
     ],
     'payment' => [
         'providers' => [
