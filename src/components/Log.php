@@ -8,6 +8,7 @@ use Monolog\Handler\StreamHandler;
 class Log
 {
     const PAYMENT = 'payment';
+    const DEBUG = 'debug';
     private static array $loggers = [];
 
     public static function get(string $name): Logger

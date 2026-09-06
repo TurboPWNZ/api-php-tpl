@@ -4,34 +4,35 @@ use FastRoute\RouteCollector;
 return FastRoute\simpleDispatcher(function(RouteCollector $r) {
 
 //    $r->get('/', 'HomeController@index');
-//    $r->get('/auth/check', [
-//        'handler' => 'AuthController@check',
-//        'middleware' =>
-//            function (\Symfony\Component\HttpFoundation\Request $request) {
-//                $authResult = \Api\Middleware::auth($request);
-//                if ($authResult !== true) {
-//                    return $authResult;
-//                }
-//
-//                return true;
-//            }
-//    ]);
-
-    /**
-     * Авторизация получение JWT токена
-     */
-    $r->post('/auth/login', [
-        'handler' => 'AuthController@login',
+    $r->get('/v1/auth/check', [
+        'handler' => 'AuthController@check',
         'middleware' =>
             function (\Symfony\Component\HttpFoundation\Request $request) {
-                $captchaCheck = \Api\Middleware::captcha($request);
-                if ($captchaCheck !== true) {
-                    return $captchaCheck;
+                $authResult = \Api\Middleware::auth($request);
+                if ($authResult !== true) {
+                    return $authResult;
                 }
 
                 return true;
             }
     ]);
+
+    /**
+     * Авторизация получение JWT токена
+     */
+    $r->post('/v1/auth/login', 'AuthController@login');
+//    $r->post('/v1/auth/login', [
+//        'handler' => 'AuthController@login',
+//        'middleware' =>
+//            function (\Symfony\Component\HttpFoundation\Request $request) {
+//                $captchaCheck = \Api\Middleware::captcha($request);
+//                if ($captchaCheck !== true) {
+//                    return $captchaCheck;
+//                }
+//
+//                return true;
+//            }
+//    ]);
 
     $r->post('/account/change-password', [
         'handler' => 'AuthController@changePassword',

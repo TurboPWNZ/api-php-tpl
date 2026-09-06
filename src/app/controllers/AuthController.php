@@ -2,6 +2,7 @@
 
 namespace Api\app\controllers;
 
+use Api\components\Log;
 use Api\Configurator;
 use Api\db\Account;
 use Api\JwtHelper;
@@ -20,6 +21,13 @@ class AuthController
     public function login(Request $request): JsonResponse
     {
         $data = $request->toArray();
+
+        Log::get(Log::DEBUG)->info('Login request received', $data);
+
+        return new JsonResponse([
+            'success' => true,
+            'message' => 'stub'
+        ]);
 
         if (empty($data['email']) || empty($data['password'])) {
             return new JsonResponse([
