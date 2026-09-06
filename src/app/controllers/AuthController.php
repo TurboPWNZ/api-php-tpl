@@ -5,9 +5,8 @@ namespace Api\app\controllers;
 use Api\components\Log;
 use Api\components\TelegramAuth;
 use Api\Configurator;
-use Api\db\Account;
 use Api\JwtHelper;
-use Api\db\DatabaseManager;
+use Api\db\TelegramAccount;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 
@@ -22,13 +21,16 @@ class AuthController
 
     public function getAccount(Request $request): JsonResponse
     {
-        $account = (new Account())->findByPk((int)$request->attributes->get('user')['user_id']);
+        $jwt = $request->attributes->get('user');
+
+        $account = TelegramAccount::findByTelegramId((int)$jwt['user_id']);
+
         return new JsonResponse([
             'success' => true,
             'user' => [
-                'id' => (int)$request->attributes->get('user')['user_id'],
-                'email' => $request->attributes->get('user')['email'],
-                'balance' => $account['balance'],
+                'id' => (int)$jwt['user_id'],
+                'username' => $jwt['username'],
+                'balance' => $account ? $account->balance : 0,
             ]
         ]);
     }
@@ -79,6 +81,7 @@ class AuthController
         }
 
         $userId = (int)$user['id'];
+        $username = (string)($user['username'] ?? '');
 
         // Generate JWT token
         JwtHelper::init($config);
@@ -86,8 +89,15 @@ class AuthController
         $token = JwtHelper::generateToken([
             'user_id' => $userId,
             'provider' => 'telegram',
-            'username' => $user['username'] ?? null,
+            'username' => $username,
         ]);
+
+        // Create account on first login and credit initial balance
+        $account = TelegramAccount::findOrCreateByTelegramId(
+            $userId,
+            $username,
+            (float)($config['params']['gameInitBalance'] ?? 0)
+        );
 
         return new JsonResponse([
             'success' => true,
@@ -96,7 +106,8 @@ class AuthController
                 'id' => $userId,
 //                'first_name' => $user['first_name'] ?? '',
 //                'last_name' => $user['last_name'] ?? '',
-                'username' => $user['username'] ?? '',
+                'username' => $username,
+                'balance' => $account->balance,
 //                'language_code' => $user['language_code'] ?? '',
 //                'photo_url' => $user['photo_url'] ?? null,
 //                'chat_type' => $telegram['chat_type'] ?? null,

@@ -10,6 +10,7 @@ class CreateTelegramAccountTable extends Migration
     {
         Capsule::schema()->create('telegram_account', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('telegram_id')->unique();
             $table->string('username', 255)->unique();
             $table->decimal('balance', 12, 2)->default(0);
             $table->timestamps();

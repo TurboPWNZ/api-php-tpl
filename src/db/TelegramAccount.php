@@ -12,29 +12,49 @@ class TelegramAccount extends Model
     public $increments = true;
 
     protected $fillable = [
+        'telegram_id',
         'username',
         'balance',
     ];
 
     protected $casts = [
-        'balance' => 'float',
+        'telegram_id' => 'int',
+        'balance'     => 'float',
     ];
 
     // ─── Scopes ─────────────────────────────────────────────────────────────
 
-    public function scopeByUsername($query, string $username)
+    public function scopeByTelegramId($query, int $telegramId)
     {
-        return $query->where('username', $username);
+        return $query->where('telegram_id', $telegramId);
     }
 
     // ─── Methods ────────────────────────────────────────────────────────────
 
     /**
-     * Получить аккаунт по username
+     * Получить аккаунт по telegram id
      */
-    public static function findByUsername(string $username): ?self
+    public static function findByTelegramId(int $telegramId): ?self
     {
-        return static::username($username)->first();
+        return static::byTelegramId($telegramId)->first();
+    }
+
+    /**
+     * Найти или создать аккаунт по telegram id
+     */
+    public static function findOrCreateByTelegramId(int $telegramId, string $username, float $balance = 0): self
+    {
+        $account = static::findByTelegramId($telegramId);
+
+        if ($account === null) {
+            $account = static::create([
+                'telegram_id' => $telegramId,
+                'username'    => $username,
+                'balance'     => $balance,
+            ]);
+        }
+
+        return $account;
     }
 
     /**

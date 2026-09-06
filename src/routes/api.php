@@ -17,6 +17,19 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
             }
     ]);
 
+    $r->get('/v1/auth/get-account', [
+        'handler' => 'AuthController@getAccount',
+        'middleware' =>
+            function (\Symfony\Component\HttpFoundation\Request $request) {
+                $authResult = \Api\Middleware::auth($request);
+                if ($authResult !== true) {
+                    return $authResult;
+                }
+
+                return true;
+            }
+    ]);
+
     /**
      * Авторизация получение JWT токена
      */
