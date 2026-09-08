@@ -20,7 +20,7 @@ namespace Api\app\services;
  */
 class SpinCalculate
 {
-    const CHANCE_COEFFICIENT = 2;
+    const CHANCE_COEFFICIENT = 3;
 
     /**
      * Комбинации выигрыша: имя линии => множитель ставки за линию (bet).
@@ -37,13 +37,13 @@ class SpinCalculate
      */
     public const PAYOUT_MULTIPLIERS = [
         'cherry'     => 5,   // 🍒 Cherry ×3
-        'lemon'      => 5,   // 🍋 Lemon ×3
+//        'lemon'      => 5,   // 🍋 Lemon ×3
         'orange'     => 10,  // 🍊 Orange ×3
-        'plum'       => 10,  // 🍑 Plum ×3
+//        'plum'       => 10,  // 🍑 Plum ×3
         'grapes'     => 15,  // 🍇 Grapes ×3
         'watermelon' => 20,  // 🍉 Watermelon ×3
         'seven'      => 25,  // 7️⃣ Seven ×3
-        'joker'      => 25,  // 🃏 Joker ×3
+//        'joker'      => 25,  // 🃏 Joker ×3
         'crown'      => 50,  // 👑 Crown ×3 (JACKPOT)
     ];
 
@@ -77,9 +77,7 @@ class SpinCalculate
         for ($line = 0; $line < $lines; $line++) {
             foreach (self::PAYOUT_MULTIPLIERS as $key => $multiplier) {
                 $chance = 1 / ($multiplier * self::CHANCE_COEFFICIENT);
-
-                $roll = random_int(0, 10_000_000) / 10_000_000;
-
+                $roll = random_int(1, 100) / 100;
                 if ($roll < $chance) {
                     return [
                         'win' => round($bet * $multiplier, 2),
