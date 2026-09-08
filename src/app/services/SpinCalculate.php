@@ -10,6 +10,13 @@ namespace Api\app\services;
  *
  * Payout-таблица задана как множитель от ставки за линию (bet):
  * при bet 10/50/100/200 множитель 5 даёт 50/250/500/1000 т.д.
+ *
+ * Шанс выпадения каждой комбинации обратно пропорционален её множителю:
+ * при bet 10 комбинация с выигрышем 5x выпадает с шансом 1 к 5,
+ * комбинация с выигрышем 20x — с шансом 1 к 20 и т.д.
+ * Если линии больше 1, шанс каждой комбинации умножается на количество
+ * линий (при lines = 50 у каждой комбинации шанс 1 к 1 — гарантированный
+ * выигрыш одной из них).
  */
 class SpinCalculate
 {
@@ -39,10 +46,20 @@ class SpinCalculate
     ];
 
     /**
-     * Случайно выбрать одну из возможных сум выигрыша.
+     * Случайно выбрать комбинацию результата спина.
      *
+     * Алгоритм ровно такой:
+     *
+     * Берём линию.
+     * Перебираем комбинации по очереди.
+     * Для каждой комбинации делаем отдельный бросок с шансом 1 / multiplier.
+     * Угадала — сразу возвращаем $bet * $multiplier.
+     * Не угадала — следующая комбинация.
+     * Все комбинации проиграли — переходим к следующей линии.
+     * Все линии проиграли — 0.
+ *
      * @param float $bet   Ставка за линию
-     * @param int   $lines Количество линий (не используется в текущей логике)
+     * @param int   $lines Количество линий (>= 1)
      *
      * @return array {
      *   @type float $win      Сумма выигрыша (0 если проигрыш),
@@ -51,16 +68,28 @@ class SpinCalculate
      */
     public static function calculate(float $bet, int $lines): array
     {
-        $multipliers = array_values(self::PAYOUT_MULTIPLIERS);
-        $keys = array_keys(self::PAYOUT_MULTIPLIERS);
+        if ($lines < 1) {
+            $lines = 1;
+        }
 
-        // На текущем этапе игрок рандомно выигрывает одну из сум из таблицы
-        $index = random_int(0, count($multipliers) - 1);
-        $win = round($bet * $multipliers[$index], 2);
+        for ($line = 0; $line < $lines; $line++) {
+            foreach (self::PAYOUT_MULTIPLIERS as $key => $multiplier) {
+                $chance = 1 / $multiplier;
+
+                $roll = random_int(0, 10_000_000) / 10_000_000;
+
+                if ($roll < $chance) {
+                    return [
+                        'win' => round($bet * $multiplier, 2),
+                        'combination' => $key,
+                    ];
+                }
+            }
+        }
 
         return [
-            'win' => $win,
-            'combination' => $keys[$index],
+            'win' => 0.0,
+            'combination' => null,
         ];
     }
 }
