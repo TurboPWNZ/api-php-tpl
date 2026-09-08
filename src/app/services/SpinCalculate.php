@@ -20,6 +20,8 @@ namespace Api\app\services;
  */
 class SpinCalculate
 {
+    const CHANCE_COEFFICIENT = 2;
+
     /**
      * Комбинации выигрыша: имя линии => множитель ставки за линию (bet).
      *
@@ -74,7 +76,7 @@ class SpinCalculate
 
         for ($line = 0; $line < $lines; $line++) {
             foreach (self::PAYOUT_MULTIPLIERS as $key => $multiplier) {
-                $chance = 1 / $multiplier;
+                $chance = 1 / ($multiplier * self::CHANCE_COEFFICIENT);
 
                 $roll = random_int(0, 10_000_000) / 10_000_000;
 
