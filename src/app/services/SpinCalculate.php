@@ -23,6 +23,13 @@ class SpinCalculate
     const CHANCE_COEFFICIENT = 3;
 
     /**
+     * Коэффициент регулирования шанса для самой частой (низкой) комбинации —
+     * той, у которой наименьший множитель в PAYOUT_MULTIPLIERS.
+     * Чем меньше значение, тем выше шанс выпадения этой комбинации.
+     */
+    const CHANCE_COEFFICIENT_LOW = 2;
+
+    /**
      * Комбинации выигрыша: имя линии => множитель ставки за линию (bet).
      *
      *   bet 1 / 5 / 10 / 20
@@ -74,9 +81,12 @@ class SpinCalculate
             $lines = 1;
         }
 
+        $lowKey = array_keys(self::PAYOUT_MULTIPLIERS, min(self::PAYOUT_MULTIPLIERS))[0];
+
         for ($line = 0; $line < $lines; $line++) {
             foreach (self::PAYOUT_MULTIPLIERS as $key => $multiplier) {
-                $chance = 1 / ($multiplier * self::CHANCE_COEFFICIENT);
+                $coefficient = $key === $lowKey ? self::CHANCE_COEFFICIENT_LOW : self::CHANCE_COEFFICIENT;
+                $chance = 1 / ($multiplier * $coefficient);
                 $roll = random_int(1, 100) / 100;
                 if ($roll < $chance) {
                     return [
