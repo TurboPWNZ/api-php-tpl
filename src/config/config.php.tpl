@@ -27,7 +27,7 @@ return [
                 'invoice' => [
                     'currency' => 'USD',
                     'description' => '',
-                    'ipn_callback_url' => 'https://domain.com/payment/notyfication/NOWPayments',
+                    'ipn_callback_url' => 'https://domain.com/v1/payment/notyfication/NOWPayments',
                     'success_url' => 'https://domain.com/dashboard/payment/success',
                     'cancel_url' => 'https://domain.com/dashboard/payment/failed'
                 ]

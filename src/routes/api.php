@@ -76,7 +76,7 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
 
 //    $r->get('/users/{id:\d+}', 'UserController@show');
 
-    $r->post('/payment/create-invoice/{provider}', [
+    $r->post('/v1/payment/create-invoice/{provider}', [
         'handler' => 'PaymentController@createInvoice',
         'middleware' =>
             function (\Symfony\Component\HttpFoundation\Request $request) {
@@ -89,7 +89,7 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
             }
     ]);
 
-    $r->get('/payment/list', [
+    $r->get('/v1/payment/list', [
         'handler' => 'PaymentController@list',
         'middleware' =>
             function (\Symfony\Component\HttpFoundation\Request $request) {
@@ -105,9 +105,9 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
     // Вебхук провайдеров оплаты, включая Telegram Bot API (TelegramStars) —
     // без JWT-мидлвари: Telegram аутентифицируется секретом из setWebhook
     // (см. TelegramStars::verifyCallback / NotificationController).
-    $r->post('/payment/notyfication/{provider}', 'NotificationController@request');
+    $r->post('/v1/payment/notyfication/{provider}', 'NotificationController@request');
 
-//    $r->post('/payment/notyfication/{provider}', function (\Symfony\Component\HttpFoundation\Request $request, $provider) {
+//    $r->post('/v1/payment/notyfication/{provider}', function (\Symfony\Component\HttpFoundation\Request $request, $provider) {
 //
 //        $log = sprintf(
 //            "[%s]\nProvider: %s\nIP: %s\nHeaders: %s\nBody: %s\n\n",

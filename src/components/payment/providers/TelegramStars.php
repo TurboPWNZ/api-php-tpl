@@ -12,8 +12,8 @@ use Api\db\Payment;
  * Пополнение звёздами Telegram (Bot API, currency=XTR).
  *
  * Подключается через общий флоу компонента Payment:
- *   createInvoice()  — вызывается из Payment::createPayment() (POST /payment/create-invoice/TelegramStars)
- *   verifyCallback() — вызывается из Payment::notification() (POST /payment/notyfication/TelegramStars)
+ *   createInvoice()  — вызывается из Payment::createPayment() (POST /v1/payment/create-invoice/TelegramStars)
+ *   verifyCallback() — вызывается из Payment::notification() (POST /v1/payment/notyfication/TelegramStars)
  *   getOrderState()  — оттуда же; для pre_checkout_query отвечает Bot API прямо здесь
  *                       (answerPreCheckoutQuery должен быть вызван в течение 10 секунд)
  *                       и возвращает orderId=null, чтобы Payment::notification() не
@@ -21,7 +21,7 @@ use Api\db\Payment;
  *
  * Настройка на стороне Telegram (один раз, вручную):
  *   POST https://api.telegram.org/bot<TOKEN>/setWebhook
- *     url=https://gamejw.duckdns.org/payment/notyfication/TelegramStars
+ *     url=https://gamejw.duckdns.org/v1/payment/notyfication/TelegramStars
  *     secret_token=<payment.providers.TelegramStars.webhookSecret из конфига>
  *     allowed_updates=["pre_checkout_query","message"]
  */
