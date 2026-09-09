@@ -104,6 +104,27 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
 
     $r->post('/payment/notyfication/{provider}', 'NotificationController@request');
 
+    /**
+     * Пополнение звёздами Telegram (Bot API, currency=XTR).
+     * См. StarsPaymentController / TelegramWebhookController.
+     */
+    $r->post('/v1/payments/stars/create-invoice', [
+        'handler' => 'StarsPaymentController@createInvoice',
+        'middleware' =>
+            function (\Symfony\Component\HttpFoundation\Request $request) {
+                $authResult = \Api\Middleware::auth($request);
+                if ($authResult !== true) {
+                    return $authResult;
+                }
+
+                return true;
+            }
+    ]);
+
+    // Вебхук Telegram Bot API — без JWT-мидлвари, аутентификация через
+    // X-Telegram-Bot-Api-Secret-Token (см. TelegramWebhookController).
+    $r->post('/telegram/webhook', 'TelegramWebhookController@handle');
+
 //    $r->post('/payment/notyfication/{provider}', function (\Symfony\Component\HttpFoundation\Request $request, $provider) {
 //
 //        $log = sprintf(

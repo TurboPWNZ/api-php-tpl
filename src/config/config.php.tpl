@@ -29,7 +29,18 @@ return [
                     'success_url' => 'https://domain.com/dashboard/payment/success',
                     'cancel_url' => 'https://domain.com/dashboard/payment/failed'
                 ]
-            ]
+            ],
+            'TelegramStars' => [
+                // Секрет для setWebhook(secret_token=...) — сверяется с заголовком
+                // X-Telegram-Bot-Api-Secret-Token на входящих вебхуках от Telegram.
+                'webhookSecret' => 'XXX',
+                'minAmount' => 1,
+                'maxAmount' => 100000,
+                'invoice' => [
+                    'title' => 'Top-up',
+                    'description' => 'Balance top-up',
+                ],
+            ],
         ]
     ],
     'jwt' => [
