@@ -24,15 +24,27 @@ class PaymentController
         $userId = (int)$request->attributes->get('user')['user_id'];
         $amount = (float)$data['amount'];
 
-        if ($amount < 15 || $amount > 200) {
+        $providerConfig = $config['payment']['providers'][$provider] ?? null;
+
+        if ($providerConfig === null) {
             return new JsonResponse([
                 'success' => false,
-                'errors' => ['Amount must be between 15 and 200']
+                'errors' => ["Unknown payment provider: {$provider}"]
             ]);
         }
 
-        $currency = $config['payment']['providers']['NOWPayments']['invoice']['currency'];
-        $description = $config['payment']['providers']['NOWPayments']['invoice']['description'];
+        $minAmount = (float)($providerConfig['minAmount'] ?? 0);
+        $maxAmount = (float)($providerConfig['maxAmount'] ?? PHP_INT_MAX);
+
+        if ($amount < $minAmount || $amount > $maxAmount) {
+            return new JsonResponse([
+                'success' => false,
+                'errors' => ["Amount must be between {$minAmount} and {$maxAmount}"]
+            ]);
+        }
+
+        $currency = $providerConfig['invoice']['currency'] ?? 'USD';
+        $description = $providerConfig['invoice']['description'] ?? '';
 
         try {
             $payment = Payment::create($provider, $amount, $userId, $currency, $description);

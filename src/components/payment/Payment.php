@@ -10,7 +10,6 @@ class Payment
 {
     protected string $providerClass;
     protected Provider $provider;
-    protected DbPayment $paymentTable;
 
     public function __construct(string $providerName = 'NOWPayments')
     {
@@ -19,10 +18,9 @@ class Payment
         if (!class_exists($providerClass)) {
             throw new \Exception("Provider {$providerName} not found");
         }
-        
+
         $this->providerClass = $providerClass;
         $this->provider = new $providerClass();
-        $this->paymentTable = new DbPayment();
     }
 
     /**
@@ -40,59 +38,74 @@ class Payment
 
         $verify = $instance->provider->verifyCallback($data);
 
-        if ($verify) {
-            list($orderId, $amount, $message, $status) = $instance->provider->getOrderState($data);
+        if (!$verify) {
+            Log::get(Log::PAYMENT)->error('Fail signature verification', ['provider' => $providerName]);
+            return false;
+        }
 
-            $payment = $instance->getPayment($orderId);
+        [$orderId, $amount, $message, $status] = $instance->provider->getOrderState($data);
 
-            // Платеж уже был завершен.
-            if (in_array($payment['status'], [\Api\db\Payment::STATUS_COMPLETED, \Api\db\Payment::STATUS_FAILED])) {
-
-                Log::get(Log::PAYMENT)->error('Payment is already completed');
-                return false;
-            }
-
-            switch ($status) {
-                case \Api\db\Payment::STATUS_PENDING:
-                    $instance->processPaymentProcessed($orderId, $message);
-                    break;
-                case \Api\db\Payment::STATUS_COMPLETED:
-                    $instance->processPaymentSuccess($orderId, $amount, $payment['user_id']);
-                    break;
-                case \Api\db\Payment::STATUS_FAILED:
-                    $instance->processPaymentFailed($orderId);
-            }
-
-            Log::get(Log::PAYMENT)->info('Payment status is ' . $status);
-
+        // Не любая нотификация относится к смене статуса заказа (например,
+        // pre_checkout_query у Stars отвечается провайдером самостоятельно
+        // внутри getOrderState() и не несёт orderId сюда — тут просто нечего делать).
+        if (!$orderId) {
+            Log::get(Log::PAYMENT)->info('Payment notification: no order id, nothing to update', [
+                'provider' => $providerName,
+                'message' => $message,
+            ]);
             return true;
         }
 
-        Log::get(Log::PAYMENT)->error('Fail signature verification');
-        return false;
+        $payment = $instance->getPayment($orderId);
+
+        if ($payment === null) {
+            Log::get(Log::PAYMENT)->error('Payment notification: order not found', ['order_id' => $orderId]);
+            return false;
+        }
+
+        // Платеж уже был завершен.
+        if (in_array($payment->status, [DbPayment::STATUS_COMPLETED, DbPayment::STATUS_FAILED], true)) {
+            Log::get(Log::PAYMENT)->error('Payment is already completed', ['order_id' => $orderId]);
+            return false;
+        }
+
+        switch ($status) {
+            case DbPayment::STATUS_PENDING:
+                $instance->processPaymentProcessed($payment, $message);
+                break;
+            case DbPayment::STATUS_COMPLETED:
+                $instance->processPaymentSuccess($payment, $amount);
+                break;
+            case DbPayment::STATUS_FAILED:
+                $instance->processPaymentFailed($payment);
+                break;
+        }
+
+        Log::get(Log::PAYMENT)->info('Payment status is ' . $status, ['order_id' => $orderId]);
+
+        return true;
     }
 
     public function createPayment(float $amount, string $currency, int $userId, string $description = ''): array
     {
         $orderId = $this->generateOrderId();
-        
-        $dbInvoice = $this->paymentTable->insert([
+
+        $dbPayment = DbPayment::create([
             'order_id' => $orderId,
             'user_id' => $userId,
             'amount' => $amount,
             'currency' => $currency,
-            'description' => $description,
             'provider' => $this->providerClass,
-            'status' => 'pending'
+            'status' => DbPayment::STATUS_PENDING,
+            'payload' => ['description' => $description],
         ]);
 
-        if (!$dbInvoice) {
+        if (!$dbPayment) {
             return [
                 'success' => false,
                 'error' => 'Failed to create payment record'
             ];
         }
-
 
         $providerInvoice = $this->provider->createInvoice(
             $amount,
@@ -103,15 +116,12 @@ class Payment
         );
 
         if (!$providerInvoice['success']) {
-            $this->paymentTable->update(
-                'order_id = :order_id',
-                [
-                    'order_id' => $orderId,
-                    'message' => $providerInvoice['error'],
-                    'status' => 'failed'
-                ]
-            );
-            
+            $dbPayment->status = DbPayment::STATUS_FAILED;
+            $dbPayment->payload = array_merge($dbPayment->payload ?? [], [
+                'message' => $providerInvoice['error'] ?? null,
+            ]);
+            $dbPayment->save();
+
             return [
                 'success' => false,
                 'error' => $providerInvoice['error'] ?? 'Failed to create invoice',
@@ -119,22 +129,11 @@ class Payment
             ];
         }
 
-        $updateResult = $this->paymentTable->update(
-            'order_id = :order_id',
-            [
-                'order_id' => $orderId,
-                'provider_invoice_id' => $providerInvoice['invoice_id'],
-                'invoice_url' => $providerInvoice['invoice_url'],
-                'status' => 'pending'
-            ]
-        );
-
-        if (!$updateResult) {
-            return [
-                'success' => false,
-                'error' => 'Failed to update payment record'
-            ];
-        }
+        $dbPayment->payload = array_merge($dbPayment->payload ?? [], [
+            'provider_invoice_id' => $providerInvoice['invoice_id'] ?? null,
+            'invoice_url' => $providerInvoice['invoice_url'] ?? null,
+        ]);
+        $dbPayment->save();
 
         return [
             'success' => true,
@@ -145,81 +144,43 @@ class Payment
         ];
     }
 
-    public function checkStatus(string $orderId): array
+    protected function processPaymentProcessed(DbPayment $payment, string $message): void
     {
-        $payment = $this->paymentTable->find('order_id = :orderId', ['orderId' => $orderId]);
-        
-        if (!$payment) {
-            return [
-                'success' => false,
-                'error' => 'Payment not found'
-            ];
-        }
-
-        if (!$payment['provider_invoice_id']) {
-            return [
-                'success' => false,
-                'error' => 'Provider invoice ID not found'
-            ];
-        }
-
-        $check = $this->provider->checkInvoice($payment['provider_invoice_id']);
-
-        if (!$check['success']) {
-            return [
-                'success' => false,
-                'error' => 'Failed to check invoice status'
-            ];
-        }
-
-        $invoice = $check['data'];
-        
-        if (($invoice['status'] ?? '') === 'success' && $payment['status'] === 'pending') {
-            $this->processPaymentSuccess($payment, $invoice);
-        }
-
-        return [
-            'success' => true,
-            'status' => $payment['status'],
-            'provider_status' => $invoice['status'] ?? 'unknown'
-        ];
+        $payment->status = DbPayment::STATUS_PENDING;
+        $payment->payload = array_merge($payment->payload ?? [], ['message' => $message]);
+        $payment->save();
     }
 
-    protected function processPaymentProcessed(string $orderId, string $message): void
+    protected function processPaymentFailed(DbPayment $payment): void
     {
-        $this->paymentTable->update(
-            'order_id = :order_id',
-            [
-                'order_id' => $orderId,
-                'status' => \Api\db\Payment::STATUS_PENDING,
-                'message' => $message
-            ]
-        );
-    }
-    protected function processPaymentFailed(string $orderId): void
-    {
-        $this->paymentTable->update(
-            'order_id = :order_id',
-            [
-                'order_id' => $orderId,
-                'status' => \Api\db\Payment::STATUS_FAILED,
-                'completed_at' => date('Y-m-d H:i:s')
-            ]
-        );
+        $payment->status = DbPayment::STATUS_FAILED;
+        $payment->save();
     }
 
-    protected function processPaymentSuccess(string $orderId, int $amount, int $userId): void
+    protected function processPaymentSuccess(DbPayment $payment, float $amount): void
     {
-        $this->paymentTable->update(
-            'order_id = :order_id',
-            [
-                'order_id' => $orderId,
-                'status' => \Api\db\Payment::STATUS_COMPLETED,
-                'completed_at' => date('Y-m-d H:i:s')
-            ]
-        );
+        // Атомарный "захват" платежа в completed: если нотификация придёт повторно
+        // (провайдер ретраит на таймаут/не-200 ответ), второй раз affected=0
+        // и баланс повторно не начислится.
+        $claimed = DbPayment::where('id', $payment->id)
+            ->where('status', DbPayment::STATUS_PENDING)
+            ->update(['status' => DbPayment::STATUS_COMPLETED]);
 
-        $this->provider->updateAccountBalance($userId, $amount);
+        if ($claimed === 0) {
+            Log::get(Log::PAYMENT)->info('Payment already completed (race), skipping balance update', [
+                'order_id' => $payment->order_id,
+            ]);
+            return;
+        }
+
+        $credited = $this->provider->updateAccountBalance((int)$payment->user_id, $amount);
+
+        if (!$credited) {
+            Log::get(Log::PAYMENT)->error('Failed to credit balance after payment', [
+                'order_id' => $payment->order_id,
+                'user_id' => $payment->user_id,
+            ]);
+        }
     }
 
     protected function generateOrderId(): string
@@ -227,14 +188,13 @@ class Payment
         return 'PAY-' . date('Ymd-His') . '-' . bin2hex(random_bytes(4));
     }
 
-    public function getPayment(string $orderId): ?array
+    public function getPayment(string $orderId): ?DbPayment
     {
-        return $this->paymentTable->find('order_id = :orderId', ['orderId' => $orderId]);
+        return DbPayment::where('order_id', $orderId)->first();
     }
 
     public static function getPaymentsByUser(int $userId, int $limit = 10, int $offset = 0): array
     {
-        $instance = new self();
-        return $instance->paymentTable->getPaymentsByUser($userId, $limit, $offset);
+        return DbPayment::getPaymentsByUser($userId, $limit, $offset);
     }
 }

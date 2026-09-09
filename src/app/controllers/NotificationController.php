@@ -17,6 +17,7 @@ class NotificationController {
         $notificationResult = Payment::notification($provider, [
             'rawBody' => $request->getContent(),
             'receivedSignature' => $request->headers->get('x-nowpayments-sig'),
+            'receivedSecret' => $request->headers->get('X-Telegram-Bot-Api-Secret-Token'),
         ]);
 
 //        $notificationResult = Payment::notification($provider, [

@@ -22,6 +22,8 @@ return [
                 'publicKey' => 'XXX',
                 'ipnKey' => 'XXX',
                 'callbackSecret' => '',
+                'minAmount' => 15,
+                'maxAmount' => 200,
                 'invoice' => [
                     'currency' => 'USD',
                     'description' => '',
@@ -37,6 +39,7 @@ return [
                 'minAmount' => 1,
                 'maxAmount' => 100000,
                 'invoice' => [
+                    'currency' => 'XTR',
                     'title' => 'Top-up',
                     'description' => 'Balance top-up',
                 ],

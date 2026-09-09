@@ -2,7 +2,7 @@
 
 namespace Api\components\payment;
 
-use Api\db\Account;
+use Api\db\TelegramAccount;
 
 abstract class Provider
 {
@@ -19,22 +19,27 @@ abstract class Provider
 
     abstract public function verifyCallback(array $payload): bool;
 
-    protected function getAccountBalance(int $userId): int
-    {
-        $account = (new Account())->findByPk($userId);
-        return (int)($account['balance'] ?? 0);
-    }
+    /**
+     * Разбор состояния заказа из данных нотификации/вебхука провайдера.
+     *
+     * @return array{0:?string,1:float,2:string,3:string} [orderId, amount, message, status]
+     *         (status — одна из Api\db\Payment::STATUS_*)
+     */
+    abstract public function getOrderState(array $payload): array;
 
-    public function updateAccountBalance(int $userId, int $amount): bool
+    /**
+     * `$telegramId` — это payments.user_id / JWT user_id, т.е. telegram_id
+     * пользователя (не внутренний PK telegram_account.id) — так же, как
+     * TelegramAccount::findByTelegramId() используется везде в GameController.
+     */
+    public function updateAccountBalance(int $telegramId, float $amount): bool
     {
-        $account = new Account();
-        $currentBalance = $this->getAccountBalance($userId);
-        return $account->update(
-            'id = :id',
-            [
-                'id' => $userId,
-                'balance' => $currentBalance + $amount
-            ]
-        ) > 0;
+        $account = TelegramAccount::findByTelegramId($telegramId);
+
+        if ($account === null) {
+            return false;
+        }
+
+        return $account->changeBalance($amount);
     }
 }
