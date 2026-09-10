@@ -35,7 +35,14 @@ class GameController
         $maxLines = (int)($config['params']['gameMaxLines'] ?? 20);
 
         // ─── Валидация ставки ────────────────────────────────────────────────
+        // Каждый отказ пишем в spin.log — раньше отклонённые спины (неверная
+        // ставка/линии, нехватка баланса) не оставляли вообще никакого следа
+        // в логах, из-за чего периодические "server did not respond" на
+        // клиенте нечем было объяснить.
         if ($bet <= 0) {
+            Log::get(Log::SPIN)->warning('Spin rejected: bet not positive', [
+                'user_id' => $userId, 'bet' => $bet, 'lines' => $lines,
+            ]);
             return new JsonResponse([
                 'success' => false,
                 'errors' => ['bet must be positive'],
@@ -43,6 +50,10 @@ class GameController
         }
 
         if ($bet < $minBet || $bet > $maxBet) {
+            Log::get(Log::SPIN)->warning('Spin rejected: bet out of range', [
+                'user_id' => $userId, 'bet' => $bet, 'lines' => $lines,
+                'minBet' => $minBet, 'maxBet' => $maxBet,
+            ]);
             return new JsonResponse([
                 'success' => false,
                 'errors' => ['bet must be between ' . $minBet . ' and ' . $maxBet],
@@ -50,6 +61,9 @@ class GameController
         }
 
         if ($lines < 1 || $lines > $maxLines) {
+            Log::get(Log::SPIN)->warning('Spin rejected: lines out of range', [
+                'user_id' => $userId, 'bet' => $bet, 'lines' => $lines, 'maxLines' => $maxLines,
+            ]);
             return new JsonResponse([
                 'success' => false,
                 'errors' => ['lines must be between 1 and ' . $maxLines],
@@ -62,6 +76,9 @@ class GameController
         $account = TelegramAccount::findByTelegramId($userId);
 
         if ($account === null) {
+            Log::get(Log::SPIN)->warning('Spin rejected: account not found', [
+                'user_id' => $userId, 'bet' => $bet, 'lines' => $lines,
+            ]);
             return new JsonResponse([
                 'success' => false,
                 'errors' => ['Account not found. Please re-login.'],
@@ -84,6 +101,10 @@ class GameController
             ->increment('balance', $delta);
 
         if ($updated === 0) {
+            Log::get(Log::SPIN)->warning('Spin rejected: insufficient balance', [
+                'user_id' => $userId, 'stake' => $stake,
+                'balance' => $account->balance, 'win' => $win, 'combination' => $result['combination'],
+            ]);
             return new JsonResponse([
                 'success' => false,
                 'errors' => ['Insufficient balance'],
