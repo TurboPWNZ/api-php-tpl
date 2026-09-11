@@ -12,6 +12,12 @@ return [
         'captchaSiteKey' => '6LeXXX',
         'captchaSecretKey' => '6LeXXX',
     ],
+    'comfyui' => [
+        'i2i' => [
+            'workflow' => 'comfy/workflow/i2i_host_gen.json',
+            'systemPromt' => 'make funny'
+        ]
+    ],
     'payment' => [
         'providers' => [
             'NOWPayments' => [
