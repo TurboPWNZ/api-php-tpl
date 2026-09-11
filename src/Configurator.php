@@ -35,4 +35,13 @@ class Configurator
     {
         return self::load();
     }
+
+    /**
+     * Абсолютный путь к корню проекта (там же лежит composer.json,
+     * `comfy/`, `storage/`) — Configurator.php лежит прямо в src/.
+     */
+    public static function projectRoot(): string
+    {
+        return dirname(__DIR__);
+    }
 }

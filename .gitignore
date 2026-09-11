@@ -3,3 +3,7 @@ composer.lock
 /src/config/config.php
 /vendor/
 /logs/*.log
+/storage/uploads/*
+/storage/results/*
+!/storage/uploads/.gitkeep
+!/storage/results/.gitkeep

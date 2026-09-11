@@ -13,10 +13,18 @@ return [
         'captchaSecretKey' => '6LeXXX',
     ],
     'comfyui' => [
+        // Если бэкенд работает в docker-compose (apache.dockerfile), а
+        // ComfyUI — на хосте, используйте host.docker.internal, а не
+        // 127.0.0.1 (тот из контейнера означает сам контейнер).
+        'domain' => 'http://127.0.0.1:8188',
         'i2i' => [
             'workflow' => 'comfy/workflow/i2i_host_gen.json',
             'systemPromt' => 'make funny'
         ]
+    ],
+    'generate' => [
+        'costBase' => 4,       // без описания
+        'costWithPrompt' => 8, // с описанием
     ],
     'payment' => [
         'providers' => [
