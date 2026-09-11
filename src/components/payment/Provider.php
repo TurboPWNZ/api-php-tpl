@@ -30,7 +30,8 @@ abstract class Provider
     /**
      * `$telegramId` — это payments.user_id / JWT user_id, т.е. telegram_id
      * пользователя (не внутренний PK telegram_account.id) — так же, как
-     * TelegramAccount::findByTelegramId() используется везде в GameController.
+     * TelegramAccount::findByTelegramId() используется везде в коде,
+     * работающем с балансом аккаунта.
      */
     public function updateAccountBalance(int $telegramId, float $amount): bool
     {

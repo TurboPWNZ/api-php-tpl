@@ -34,9 +34,10 @@ class DatabaseManager
             // Без этого PDO/MySQL по умолчанию считает affected rows как
             // "строки, у которых реально изменилось значение", а не "строки,
             // подошедшие под WHERE". Из-за этого ->increment('balance', 0)
-            // (безубыточный спин: выигрыш == ставке) возвращал 0 и код в
-            // GameController ошибочно трактовал это как "Insufficient balance",
-            // хотя WHERE balance >= stake прекрасно матчился.
+            // (списание с нулевым дельта — сумма спишется и тут же
+            // вернётся) возвращало 0, и код ошибочно трактовал это как
+            // "Insufficient balance", хотя WHERE balance >= stake прекрасно
+            // матчился.
             'options'  => [
                 \PDO::MYSQL_ATTR_FOUND_ROWS => true,
             ],

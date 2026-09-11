@@ -21,7 +21,7 @@ use Api\db\Payment;
  *
  * Настройка на стороне Telegram (один раз, вручную):
  *   POST https://api.telegram.org/bot<TOKEN>/setWebhook
- *     url=https://gamejw.duckdns.org/v1/payment/notyfication/TelegramStars
+ *     url=https://your-domain.com/v1/payment/notyfication/TelegramStars
  *     secret_token=<payment.providers.TelegramStars.webhookSecret из конфига>
  *     allowed_updates=["pre_checkout_query","message"]
  */

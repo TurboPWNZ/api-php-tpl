@@ -9,7 +9,6 @@ class Log
 {
     const PAYMENT = 'payment';
     const DEBUG = 'debug';
-    const SPIN = 'spin';
     private static array $loggers = [];
 
     public static function get(string $name): Logger

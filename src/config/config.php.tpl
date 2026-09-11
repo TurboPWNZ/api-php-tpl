@@ -8,12 +8,9 @@ return [
     ],
     'params' => [
         'gameInitBalance' => 100,
+        'gtBotToken' => '000000:LOCAL-DEV-INSECURE-NOT-A-REAL-BOT',
         'captchaSiteKey' => '6LeXXX',
         'captchaSecretKey' => '6LeXXX',
-        // Игровая логика (см. spincalculate.md)
-        'gameMinBet' => 1,
-        'gameMaxBet' => 20,
-        'gameMaxLines' => 7,
     ],
     'payment' => [
         'providers' => [

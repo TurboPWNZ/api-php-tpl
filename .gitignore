@@ -2,3 +2,4 @@
 composer.lock
 /src/config/config.php
 /vendor/
+/logs/*.log

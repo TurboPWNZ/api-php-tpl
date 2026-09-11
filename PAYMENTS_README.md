@@ -11,7 +11,7 @@
 
 Контроллеры: `PaymentController` (создание инвойса, список платежей пользователя), `NotificationController` (единая точка входа для вебхуков/нотификаций всех провайдеров).
 
-**Важно:** `payments.user_id` везде хранит **telegram_id** пользователя (как в JWT), а не внутренний `telegram_account.id` — так проще сверяться с `TelegramAccount::findByTelegramId()`, которым уже пользуется `GameController`.
+**Важно:** `payments.user_id` везде хранит **telegram_id** пользователя (как в JWT), а не внутренний `telegram_account.id` — так проще сверяться с `TelegramAccount::findByTelegramId()`.
 
 ---
 
@@ -56,7 +56,7 @@
             'maxAmount' => 100000,
             'invoice' => [
                 'currency' => 'XTR',   // не менять — это код валюты Stars в Bot API
-                'title' => 'Jokers Wild — Top-up',
+                'title' => 'Top-up',
                 'description' => 'Пополнение баланса',
             ],
         ],
@@ -82,7 +82,7 @@
 
    ```bash
    curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" \
-     -d "url=https://gamejw.duckdns.org/v1/payment/notyfication/TelegramStars" \
+     -d "url=https://your-domain.com/v1/payment/notyfication/TelegramStars" \
      -d "secret_token=<тот же секрет, что в config.php>" \
      -d 'allowed_updates=["pre_checkout_query","message"]'
    ```
@@ -115,13 +115,13 @@
 
 ```bash
 # 1. Создать инвойс (нужен JWT из /v1/auth/login)
-curl -X POST https://gamejw.duckdns.org/v1/payment/create-invoice/TelegramStars \
+curl -X POST https://your-domain.com/v1/payment/create-invoice/TelegramStars \
   -H "Authorization: Bearer <JWT>" -H "Content-Type: application/json" \
   -d '{"amount":50}'
 # -> {"success":true,"order_id":"PAY-...","invoice_url":"https://t.me/$...","amount":50,"currency":"XTR"}
 
 # 2. Список платежей пользователя
-curl https://gamejw.duckdns.org/v1/payment/list -H "Authorization: Bearer <JWT>"
+curl https://your-domain.com/v1/payment/list -H "Authorization: Bearer <JWT>"
 ```
 
 `invoice_url` открывается на фронте через `Telegram.WebApp.openInvoice(url, callback)` — дальше всё оплачивается и подтверждается на стороне Telegram, бэкенд только принимает вебхук.

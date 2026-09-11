@@ -35,19 +35,6 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
      */
     $r->post('/v1/auth/login', 'AuthController@login');
 
-    $r->post('/v1/game/spin', [
-        'handler' => 'GameController@spin',
-        'middleware' =>
-            function (\Symfony\Component\HttpFoundation\Request $request) {
-                $authResult = \Api\Middleware::auth($request);
-                if ($authResult !== true) {
-                    return $authResult;
-                }
-
-                return true;
-            }
-    ]);
-
 //    $r->post('/v1/auth/login', [
 //        'handler' => 'AuthController@login',
 //        'middleware' =>
