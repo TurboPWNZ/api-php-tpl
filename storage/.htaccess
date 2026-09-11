@@ -1,0 +1,9 @@
+# /storage files are served directly by Apache (see the root .htaccess'
+# "existing file? serve it" rule) — index.php never runs for them, so its
+# Access-Control-Allow-Origin header never applies here. The frontend runs
+# on a different origin (e.g. localhost:5173 vs the API's :8097/domain) and
+# needs to fetch() these images (not just <img src>, which isn't
+# CORS-restricted) — e.g. to re-upload a previous result for "Повторить".
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+</IfModule>
