@@ -1,0 +1,26 @@
+# nginx + php-fpm variant of docker-compose.yml — mirrors the production
+# web server (nginx), unlike the default docker-compose.yml (Apache), which
+# stays as the day-to-day dev stack. Run alongside it on a different port:
+#
+#   docker compose -f docker-compose.nginx.yml up -d --build
+#
+# Same code, same src/config/config.php as the Apache stack — this is
+# purely for validating the nginx config in docker/nginx.conf before it
+# goes on the real server (see DEPLOY.md).
+services:
+  php-fpm:
+    build:
+      context: .
+      dockerfile: docker/php-fpm.dockerfile
+    volumes:
+      - ./:/var/www/html
+
+  nginx:
+    image: nginx:1.24-alpine
+    ports:
+      - "8098:80"
+    volumes:
+      - ./:/var/www/html
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - php-fpm
