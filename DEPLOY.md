@@ -75,6 +75,43 @@ sudo find storage logs -type d -exec chmod 755 {} \;
 всё будет падать с `500` при первой же генерации; см. `GENERATION_README.md`
 про то, как это уже один раз ловили в докере.)
 
+### Лимиты загрузки (`upload_max_filesize` / `post_max_size`)
+
+Стоковые дефолты PHP (`upload_max_filesize=2M`, `post_max_size=8M`) —
+это уже само по себе выглядит как рабочий лимит, поэтому его легко
+пропустить: фронт заявляет "до 20 МБ" и до вызова `POST
+/v1/generation/create` никто это число никак не проверяет. Хвост:
+загрузка с телефона (особенно iPhone, где фото и после конвертации
+HEIC→JPEG может быть 5–15 МБ) тихо режется PHP-ом ещё на этапе парсинга
+`$_FILES` — `GenerationController::create()` в этом случае получает
+`$file === null`/`!$file->isValid()` и отвечает `400 "image file is
+required"`, что выглядит как случайный баг с форматом фото, а не как
+лимит upload'а (поймано именно так на проде — см. переписку в истории
+коммитов фронта).
+
+На докер-образах (`docker/apache.dockerfile`, `docker/php-fpm.dockerfile`)
+это уже поднято до 25M/30M. На bare-metal сервере нужно то же самое
+руками:
+
+```bash
+sudo tee /etc/php/8.2/fpm/conf.d/99-uploads.ini > /dev/null <<'EOF'
+upload_max_filesize = 25M
+post_max_size = 30M
+EOF
+sudo systemctl restart php8.2-fpm
+```
+
+Проверить, что применилось (через саму FPM-конфигурацию, не через CLI —
+у CLI SAPI свой php.ini, `php -i` в шелле может показывать другие
+значения, чем то, что реально видит php-fpm):
+
+```bash
+php-fpm8.2 -i | grep -E "upload_max_filesize|post_max_size"
+```
+
+Не забыть `client_max_body_size` в nginx (см. раздел 3) — он режет
+запрос ещё раньше, отдельным `413`, до того как PHP вообще увидит файл.
+
 ### Конфиг (`src/config/config.php`)
 
 Копируется из `config.php.tpl` — на нём НЕ должны остаться значения из
