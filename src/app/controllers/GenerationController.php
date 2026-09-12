@@ -80,9 +80,12 @@ class GenerationController
 
             // 2. Грузим ту же картинку в ComfyUI (у него свой input/) и
             //    патчим workflow: картинка + промпт (systemPromt[, userPrompt]).
+            //    Гостю (ни разу не пополнял баланс) — systemPromtGuest, платящему
+            //    клиенту — обычный systemPromt (см. TelegramAccount::isGuest()).
             $comfyDomain = (string)($config['comfyui']['domain'] ?? '');
             $workflowPath = Configurator::projectRoot() . '/' . ltrim((string)($config['comfyui']['i2i']['workflow'] ?? ''), '/');
-            $systemPrompt = (string)($config['comfyui']['i2i']['systemPromt'] ?? '');
+            $systemPromptKey = $account->isGuest() ? 'systemPromtGuest' : 'systemPromt';
+            $systemPrompt = (string)($config['comfyui']['i2i'][$systemPromptKey] ?? $config['comfyui']['i2i']['systemPromt'] ?? '');
             $prompt = $userPrompt !== '' ? "{$systemPrompt}, {$userPrompt}" : $systemPrompt;
 
             $client = new ComfyUIClient($comfyDomain);

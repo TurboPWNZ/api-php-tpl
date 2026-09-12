@@ -249,6 +249,14 @@ initData этого не заменяют. Зато саму логику зач
 
 ## 6. Фронтенд
 
+### Устрановка с релизного тега
+
+```bash
+gh auth login   # один раз, с токеном/логином, у которого есть доступ к репо
+gh release download v0.0.1 --repo TurboPWNZ/ai-gen-tg --pattern "dist.zip" --dir /tmp/dist-v0.0.1
+unzip /tmp/dist-v0.0.1/dist.zip -d /var/www/app   # замени путь на реальную папку сервера
+```
+
 ```bash
 cd app
 npm install

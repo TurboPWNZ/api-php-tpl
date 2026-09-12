@@ -19,7 +19,10 @@ return [
         'domain' => 'http://127.0.0.1:8188',
         'i2i' => [
             'workflow' => 'comfy/workflow/i2i_host_gen.json',
-            'systemPromt' => 'make funny'
+            'systemPromt' => 'make funny',
+            // Подставляется вместо systemPromt, пока аккаунт в статусе 'guest'
+            // (ни разу не пополнял баланс) — см. TelegramAccount::STATUS_GUEST.
+            'systemPromtGuest' => 'make funny'
         ]
     ],
     'generate' => [

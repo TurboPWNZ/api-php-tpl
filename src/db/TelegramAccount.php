@@ -6,6 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 
 class TelegramAccount extends Model
 {
+    // 'guest' — ни разу не пополнял баланс (пока хватает стартового/бонусного);
+    // 'customer' — хотя бы одно пополнение прошло успешно. Определяет, какой
+    // systemPromt(Guest) подставляется в генерации — см. GenerationController.
+    public const STATUS_GUEST = 'guest';
+    public const STATUS_CUSTOMER = 'customer';
+
     protected $table = 'telegram_account';
 
     protected $keyType = 'int';
@@ -15,6 +21,7 @@ class TelegramAccount extends Model
         'telegram_id',
         'username',
         'balance',
+        'status',
     ];
 
     protected $casts = [
@@ -71,6 +78,27 @@ class TelegramAccount extends Model
     public function changeBalance(float $delta): bool
     {
         $this->balance = round($this->balance + $delta, 2);
+
+        return $this->save();
+    }
+
+    public function isGuest(): bool
+    {
+        return $this->status !== self::STATUS_CUSTOMER;
+    }
+
+    /**
+     * Помечает аккаунт как платящего клиента — вызывается один раз, в
+     * момент первого успешного пополнения (Provider::updateAccountBalance).
+     * Статус не понижается обратно, даже если баланс потом снова уйдёт в 0.
+     */
+    public function markAsCustomer(): bool
+    {
+        if ($this->status === self::STATUS_CUSTOMER) {
+            return true;
+        }
+
+        $this->status = self::STATUS_CUSTOMER;
 
         return $this->save();
     }

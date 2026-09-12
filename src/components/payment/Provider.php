@@ -41,6 +41,15 @@ abstract class Provider
             return false;
         }
 
-        return $account->changeBalance($amount);
+        $credited = $account->changeBalance($amount);
+
+        // A completed top-up (this method only runs from processPaymentSuccess)
+        // graduates the account from 'guest' to 'customer' for good — that
+        // flag decides which systemPromt(Guest) GenerationController uses.
+        if ($credited) {
+            $account->markAsCustomer();
+        }
+
+        return $credited;
     }
 }
