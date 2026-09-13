@@ -74,7 +74,7 @@ class Payment
                 $instance->processPaymentProcessed($payment, $message);
                 break;
             case DbPayment::STATUS_COMPLETED:
-                $instance->processPaymentSuccess($payment, $amount);
+                $instance->processPaymentSuccess($payment, $amount, $message);
                 break;
             case DbPayment::STATUS_FAILED:
                 $instance->processPaymentFailed($payment);
@@ -157,7 +157,7 @@ class Payment
         $payment->save();
     }
 
-    protected function processPaymentSuccess(DbPayment $payment, float $amount): void
+    protected function processPaymentSuccess(DbPayment $payment, float $amount, string $message = ''): void
     {
         // Атомарный "захват" платежа в completed: если нотификация придёт повторно
         // (провайдер ретраит на таймаут/не-200 ответ), второй раз affected=0
@@ -171,6 +171,20 @@ class Payment
                 'order_id' => $payment->order_id,
             ]);
             return;
+        }
+
+        // TelegramStars::getOrderState() smuggles `telegram_payment_charge_id=...`
+        // through here — it used to get silently dropped, but it's the ONLY
+        // identifier Bot API's refundStarPayment can look this payment up by
+        // (there's no way to recover it after the fact). Pull it into its own
+        // payload key too, not just the raw log-style message string.
+        if ($message !== '') {
+            $extra = ['message' => $message];
+            if (preg_match('/^telegram_payment_charge_id=(.+)$/', $message, $m)) {
+                $extra['telegram_payment_charge_id'] = $m[1];
+            }
+            $payment->payload = array_merge($payment->payload ?? [], $extra);
+            $payment->save();
         }
 
         $credited = $this->provider->updateAccountBalance((int)$payment->user_id, $amount);
