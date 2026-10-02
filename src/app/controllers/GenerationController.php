@@ -2,8 +2,6 @@
 
 namespace Api\app\controllers;
 
-use Api\components\comfyui\ComfyUIClient;
-use Api\components\comfyui\I2IWorkflow;
 use Api\components\Log;
 use Api\components\Storage;
 use Api\Configurator;
@@ -20,9 +18,9 @@ class GenerationController
 
     /**
      * POST /v1/generation/create — multipart/form-data: image (файл) + prompt (опционально).
-     * Списывает стоимость, кладёт фото в очередь ComfyUI, создаёт запись
-     * generations со status=processing. Результат забирается через
-     * GET /v1/generation/status/{id} (ComfyUI генерирует не мгновенно).
+     * Списывает стоимость, сохраняет фото и ставит заказ в очередь
+     * (generations.status=queued). Воркер очереди отдаёт его свободному
+     * ИИ-серверу; результат фронт ждёт через GET /v1/generation/status/{id}.
      */
     public function create(Request $request): JsonResponse
     {
@@ -71,51 +69,41 @@ class GenerationController
         }
 
         try {
-            // 1. Сохраняем оригинал на диск (у нас — навсегда, для "Было").
+            // Оригинал на диск (у нас — навсегда, для "Было"). В ComfyUI его
+            // отправит воркер очереди, когда освободится сервер.
             [$uploadsAbsDir, $uploadsRelDir] = Storage::userDir('uploads', $userId);
             $filename = Storage::randomFilename($file->getClientOriginalName());
             $file->move($uploadsAbsDir, $filename);
-            $sourceRelPath = "{$uploadsRelDir}/{$filename}";
-            $sourceAbsPath = "{$uploadsAbsDir}/{$filename}";
-
-            // 2. Грузим ту же картинку в ComfyUI (у него свой input/) и
-            //    патчим workflow: картинка + промпт (systemPromt[, userPrompt]).
-            //    Гостю (ни разу не пополнял баланс) — systemPromtGuest, платящему
-            //    клиенту — обычный systemPromt (см. TelegramAccount::isGuest()).
-            $comfyDomain = (string)($config['comfyui']['domain'] ?? '');
-            $workflowPath = Configurator::projectRoot() . '/' . ltrim((string)($config['comfyui']['i2i']['workflow'] ?? ''), '/');
-            $systemPromptKey = $account->isGuest() ? 'systemPromtGuest' : 'systemPromt';
-            $systemPrompt = (string)($config['comfyui']['i2i'][$systemPromptKey] ?? $config['comfyui']['i2i']['systemPromt'] ?? '');
-            $prompt = $userPrompt !== '' ? "{$systemPrompt}, {$userPrompt}" : $systemPrompt;
-
-            $client = new ComfyUIClient($comfyDomain);
-            $uploaded = $client->uploadImage($sourceAbsPath, $filename);
-            $workflow = I2IWorkflow::build($workflowPath, $uploaded['name'], $prompt);
-            $promptId = $client->queuePrompt($workflow);
         } catch (\Throwable $e) {
-            // Не смогли поставить генерацию в очередь — возвращаем списанное.
             DatabaseManager::connection()->table('telegram_account')
                 ->where('id', $account->id)
                 ->increment('balance', $cost);
 
-            Log::get(Log::DEBUG)->error('Generation create failed', [
+            Log::get(Log::DEBUG)->error('Generation upload failed', [
                 'user_id' => $userId, 'error' => $e->getMessage(),
             ]);
 
             return new JsonResponse(['success' => false, 'errors' => ['Generation service is unavailable']], 502);
         }
 
+        // Гостю (ни разу не пополнял баланс) — systemPromtGuest, платящему
+        // клиенту — обычный systemPromt (см. TelegramAccount::isGuest()).
+        // Считается сейчас, на момент заказа, и хранится в full_prompt.
+        $systemPromptKey = $account->isGuest() ? 'systemPromtGuest' : 'systemPromt';
+        $systemPrompt = (string)($config['comfyui']['i2i'][$systemPromptKey] ?? $config['comfyui']['i2i']['systemPromt'] ?? '');
+
         $generation = Generation::create([
             'user_id' => $userId,
-            'status' => Generation::STATUS_PROCESSING,
+            'env' => Configurator::queueEnv(),
+            'status' => Generation::STATUS_QUEUED,
             'prompt' => $userPrompt !== '' ? $userPrompt : null,
+            'full_prompt' => $userPrompt !== '' ? "{$systemPrompt}, {$userPrompt}" : $systemPrompt,
             'cost' => $cost,
-            'source_path' => $sourceRelPath,
-            'comfy_prompt_id' => $promptId,
+            'source_path' => "{$uploadsRelDir}/{$filename}",
         ]);
 
         Log::get(Log::DEBUG)->info('Generation queued', [
-            'user_id' => $userId, 'generation_id' => $generation->id, 'comfy_prompt_id' => $promptId, 'cost' => $cost,
+            'user_id' => $userId, 'generation_id' => $generation->id, 'cost' => $cost,
         ]);
 
         return new JsonResponse([
@@ -125,7 +113,9 @@ class GenerationController
     }
 
     /**
-     * GET /v1/generation/status/{id} — опрашивается фронтом, пока status=processing.
+     * GET /v1/generation/status/{id} — опрашивается фронтом, пока заказ
+     * queued/processing. Только читает БД: раздачу по серверам и сбор
+     * результатов делает воркер очереди (GenerationQueue).
      */
     public function status(Request $request, string $id): JsonResponse
     {
@@ -134,59 +124,6 @@ class GenerationController
         $generation = Generation::find((int)$id);
         if ($generation === null || (int)$generation->user_id !== $userId) {
             return new JsonResponse(['success' => false, 'errors' => ['Generation not found']], 404);
-        }
-
-        if ($generation->status !== Generation::STATUS_PROCESSING) {
-            return new JsonResponse(['success' => true, 'data' => $generation->toApiArray($request->getSchemeAndHttpHost())]);
-        }
-
-        $config = Configurator::getConfig();
-        $client = new ComfyUIClient((string)($config['comfyui']['domain'] ?? ''));
-
-        try {
-            $history = $client->getHistory($generation->comfy_prompt_id);
-        } catch (\Throwable $e) {
-            Log::get(Log::DEBUG)->error('Generation status check failed', [
-                'generation_id' => $generation->id, 'error' => $e->getMessage(),
-            ]);
-            return new JsonResponse(['success' => true, 'data' => $generation->toApiArray($request->getSchemeAndHttpHost())]);
-        }
-
-        if ($history === null) {
-            // Ещё в очереди/выполняется в ComfyUI.
-            return new JsonResponse(['success' => true, 'data' => $generation->toApiArray($request->getSchemeAndHttpHost())]);
-        }
-
-        $statusStr = $history['status']['status_str'] ?? null;
-        $image = null;
-        foreach ($history['outputs'] ?? [] as $nodeOutput) {
-            if (!empty($nodeOutput['images'][0])) {
-                $image = $nodeOutput['images'][0];
-                break;
-            }
-        }
-
-        if ($statusStr === 'error' || $image === null) {
-            $this->refund($generation);
-            $generation->markFailed('ComfyUI: ' . ($statusStr ?? 'no output image'));
-
-            return new JsonResponse(['success' => true, 'data' => $generation->toApiArray($request->getSchemeAndHttpHost())]);
-        }
-
-        try {
-            $bytes = $client->viewImage($image['filename'], $image['subfolder'] ?? '', $image['type'] ?? 'output');
-
-            [$resultsAbsDir, $resultsRelDir] = Storage::userDir('results', $userId);
-            $resultFilename = Storage::randomFilename($image['filename'], 'png');
-            file_put_contents("{$resultsAbsDir}/{$resultFilename}", $bytes);
-
-            $generation->markReady("{$resultsRelDir}/{$resultFilename}");
-        } catch (\Throwable $e) {
-            Log::get(Log::DEBUG)->error('Generation result fetch failed', [
-                'generation_id' => $generation->id, 'error' => $e->getMessage(),
-            ]);
-            $this->refund($generation);
-            $generation->markFailed('Failed to fetch result: ' . $e->getMessage());
         }
 
         return new JsonResponse(['success' => true, 'data' => $generation->toApiArray($request->getSchemeAndHttpHost())]);
@@ -214,8 +151,8 @@ class GenerationController
     /**
      * DELETE /v1/generation/{id} — пользователь удаляет свою генерацию.
      * Запись помечается deleted_at (история списаний сохраняется), файлы
-     * оригинала и результата удаляются с диска. Генерацию в процессе удалять
-     * нельзя: status() по ней ещё может сделать refund/markReady.
+     * оригинала и результата удаляются с диска. Генерацию в очереди/в процессе
+     * удалять нельзя: с ней ещё работает воркер очереди (refund/markReady).
      */
     public function delete(Request $request, string $id): JsonResponse
     {
@@ -226,7 +163,7 @@ class GenerationController
             return new JsonResponse(['success' => false, 'errors' => ['Generation not found']], 404);
         }
 
-        if ($generation->status === Generation::STATUS_PROCESSING) {
+        if ($generation->isActive()) {
             return new JsonResponse(['success' => false, 'errors' => ['Generation is in progress']], 409);
         }
 
@@ -245,14 +182,5 @@ class GenerationController
         ]);
 
         return new JsonResponse(['success' => true]);
-    }
-
-    private function refund(Generation $generation): void
-    {
-        // generations.user_id хранит telegram_id (как payments.user_id) —
-        // а в самой telegram_account эта колонка называется telegram_id.
-        DatabaseManager::connection()->table('telegram_account')
-            ->where('telegram_id', $generation->user_id)
-            ->increment('balance', $generation->cost);
     }
 }

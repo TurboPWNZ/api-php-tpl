@@ -37,6 +37,12 @@ class Storage
         return [$absolute, $relative];
     }
 
+    /** Абсолютный путь по относительному из БД ("uploads/123/xxx.jpg"). */
+    public static function absolutePath(string $relativePath): string
+    {
+        return self::root() . '/' . ltrim($relativePath, '/');
+    }
+
     /**
      * Удаляет файл по относительному пути из БД ("uploads/123/xxx.jpg").
      * Путь проверяется на нахождение внутри /storage — на случай мусора в БД.

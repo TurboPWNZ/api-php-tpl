@@ -360,6 +360,61 @@ HTTPS — тем же certbot'ом, что и для API-домена (разд�
       нельзя проверить без настоящего бота и настоящего Telegram-клиента
 - [ ] `logs/*.log` пишутся и ротируются (см. ниже) — не растут бесконечно
 
+## 7a. Очередь генераций и пул ИИ-серверов
+
+Заказ (`POST /v1/generation/create`) не уходит в ComfyUI сразу: он встаёт в
+очередь (`generations.status = queued`), а воркер `php artisan queue:work`
+каждые 2 сек раздаёт заказы свободным серверам из таблицы `ai_servers`
+(один сервер — одна генерация) и забирает результаты. Код —
+`src/components/queue/GenerationQueue.php`, настройки — секция `queue` в
+`config.php` (без неё работают значения по умолчанию из `config.php.tpl`).
+`comfyui.domain` больше не используется — серверы живут в БД.
+
+**БД общая для локального докера и прода, файлы фото — нет.** Поэтому у
+серверов и заказов есть колонка `env`, а воркер работает только со своим
+окружением (`queue.env` в `config.php`): на проде — `prod` (значение по
+умолчанию, можно не указывать), в локальном `config.php` — `'local'`.
+`servers:add` добавляет сервер в текущее окружение; `servers:list`
+показывает все. Миграции, запущенные локально, применяются и к проду.
+
+**Все artisan-команды на проде — от `www-data`** (`sudo -u www-data php
+artisan ...`), иначе `logs/queue.log` создастся от root и воркер не сможет
+в него писать.
+
+Серверы:
+
+```bash
+sudo -u www-data php artisan servers:add gpu1 https://desktop-xxx.ts.net  # встаёт offline, воркер проверит /queue и включит
+sudo -u www-data php artisan servers:list
+sudo -u www-data php artisan servers:disable 1   # новых заказов не получает, текущий досчитает
+sudo -u www-data php artisan servers:enable 1
+sudo -u www-data php artisan queue:status        # сколько заказов в каких статусах
+```
+
+Воркер (systemd, юнит в репо — `deploy/aigen-queue-worker.service`):
+
+```bash
+sudo cp deploy/aigen-queue-worker.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now aigen-queue-worker
+systemctl status aigen-queue-worker
+tail -f logs/queue.log
+```
+
+После `git pull` — `sudo systemctl restart aigen-queue-worker` (иначе
+воркер подхватит новый код только при плановом перезапуске, раз в час).
+
+Что делает воркер при сбоях:
+- сервер не ответил на отправку заказа → сервер `offline`, заказ остаётся
+  в очереди (попытка не тратится) и уходит на другой сервер;
+- 3 неудачных опроса подряд по занятому серверу или генерация дольше
+  `queue.jobTimeout` (600 сек) → сервер `offline`, заказ обратно в очередь;
+- `offline`-сервер раз в 30 сек проверяется через `/queue` и возвращается
+  в пул, когда его очередь ComfyUI пуста;
+- после `queue.maxAttempts` (3) реальных отправок заказ `failed`, кредиты
+  возвращаются;
+- если упали все серверы, заказы просто ждут в очереди.
+
 ## 8. Мелочи по эксплуатации
 
 - **Логи** (`Api\components\Log`, `logs/*.log`) ничем не ротируются

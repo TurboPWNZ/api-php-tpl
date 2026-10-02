@@ -50,7 +50,7 @@ class ComfyUIClient
         $decoded = json_decode($response, true);
         if (!is_array($decoded) || empty($decoded['prompt_id'])) {
             $errors = isset($decoded['node_errors']) ? json_encode($decoded['node_errors'], JSON_UNESCAPED_UNICODE) : $response;
-            throw new \RuntimeException('ComfyUI /prompt rejected the workflow: ' . $errors);
+            throw new ComfyUIRejectedException('ComfyUI /prompt rejected the workflow: ' . $errors);
         }
 
         return (string)$decoded['prompt_id'];
@@ -76,6 +76,25 @@ class ComfyUIClient
         }
 
         return $decoded[$promptId];
+    }
+
+    /**
+     * GET /queue — {"queue_running": [...], "queue_pending": [...]}. Пустые
+     * оба списка = сервер простаивает (используется для возврата
+     * offline-сервера в пул).
+     *
+     * @throws \RuntimeException
+     */
+    public function getQueue(): array
+    {
+        $response = $this->request('GET', '/queue');
+
+        $decoded = json_decode($response, true);
+        if (!is_array($decoded) || !isset($decoded['queue_running'], $decoded['queue_pending'])) {
+            throw new \RuntimeException('ComfyUI /queue: unexpected response: ' . substr($response, 0, 500));
+        }
+
+        return $decoded;
     }
 
     /**
@@ -121,6 +140,10 @@ class ComfyUIClient
 
         if ($errno !== 0) {
             throw new \RuntimeException("ComfyUI request to {$path} failed: {$error}");
+        }
+
+        if ($status >= 400 && $status < 500) {
+            throw new ComfyUIRejectedException("ComfyUI request to {$path} returned HTTP {$status}: " . substr((string)$response, 0, 500));
         }
 
         if ($status >= 400) {

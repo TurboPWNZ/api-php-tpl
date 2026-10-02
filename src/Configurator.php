@@ -37,6 +37,16 @@ class Configurator
     }
 
     /**
+     * Окружение очереди генераций ('prod', 'local', ...) — config queue.env.
+     * БД общая для докера и прода: по нему воркер отделяет свои серверы и
+     * заказы от чужих (см. GenerationQueue).
+     */
+    public static function queueEnv(): string
+    {
+        return (string)(self::getConfig()['queue']['env'] ?? 'prod');
+    }
+
+    /**
      * Абсолютный путь к корню проекта (там же лежит composer.json,
      * `comfy/`, `storage/`) — Configurator.php лежит прямо в src/.
      */

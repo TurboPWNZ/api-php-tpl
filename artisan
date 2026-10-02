@@ -8,6 +8,18 @@
  *   php artisan migrate:rollback — rollback last batch
  *   php artisan migrate:refresh  — rollback all + re-migrate
  *   php artisan migrate:status   — show migration status
+ *
+ * Очередь генераций (см. Api\components\queue\GenerationQueue):
+ *   php artisan queue:work               — воркер (systemd), tick каждые queue.pollInterval сек
+ *   php artisan queue:tick               — один проход очереди (отладка)
+ *   php artisan queue:status             — сколько заказов в каких статусах
+ *
+ * Пул ИИ-серверов (ai_servers):
+ *   php artisan servers:list
+ *   php artisan servers:add <name> <url> — например: servers:add gpu1 http://10.0.0.5:8188
+ *                                          (в окружение из config queue.env)
+ *   php artisan servers:enable <id>
+ *   php artisan servers:disable <id>     — не получает новых заказов, текущий досчитает
  */
 
 require __DIR__ . '/vendor/autoload.php';
@@ -86,7 +98,102 @@ switch ($command) {
         }
         break;
 
+    case 'queue:work':
+        $queue = new \Api\components\queue\GenerationQueue();
+        $queueConfig = \Api\Configurator::getConfig()['queue'] ?? [];
+        $pollInterval = max(1, (int)($queueConfig['pollInterval'] ?? 2));
+        // Выходим раз в час — systemd (Restart=always) поднимет заново:
+        // свежий код после git pull и свежее соединение с БД.
+        $maxRuntime = (int)($queueConfig['workerMaxRuntime'] ?? 3600);
+        $startedAt = time();
+
+        $stop = false;
+        if (function_exists('pcntl_async_signals')) {
+            pcntl_async_signals(true);
+            pcntl_signal(SIGTERM, function () use (&$stop) { $stop = true; });
+            pcntl_signal(SIGINT, function () use (&$stop) { $stop = true; });
+        }
+
+        echo "Queue worker started (env " . \Api\Configurator::queueEnv() . ", poll every {$pollInterval}s)\n";
+        while (!$stop && time() - $startedAt < $maxRuntime) {
+            try {
+                $queue->tick();
+            } catch (\Throwable $e) {
+                \Api\components\Log::get('queue')->error('Queue tick failed', [
+                    'error' => $e->getMessage(), 'file' => $e->getFile() . ':' . $e->getLine(),
+                ]);
+                sleep(5);
+            }
+            sleep($pollInterval);
+        }
+        echo "Queue worker stopped\n";
+        break;
+
+    case 'queue:tick':
+        $ran = (new \Api\components\queue\GenerationQueue())->tick();
+        echo $ran ? "Tick done.\n" : "Another worker holds the queue lock, skipped.\n";
+        break;
+
+    case 'queue:status':
+        $env = \Api\Configurator::queueEnv();
+        $counts = \Api\db\Generation::query()
+            ->where('env', $env)
+            ->selectRaw('status, COUNT(*) AS cnt')
+            ->groupBy('status')
+            ->pluck('cnt', 'status');
+        echo "env {$env}:\n";
+        foreach ($counts as $status => $cnt) {
+            printf("  %-12s %d\n", $status, $cnt);
+        }
+        break;
+
+    case 'servers:list':
+        // Все окружения — чтобы было видно и чужие серверы в общей БД.
+        $servers = \Api\db\AiServer::orderBy('env')->orderBy('id')->get();
+        if ($servers->isEmpty()) {
+            echo "No servers. Add one: php artisan servers:add <name> <url>\n";
+            break;
+        }
+        echo "Current env: " . \Api\Configurator::queueEnv() . "\n";
+        printf("%-4s %-6s %-12s %-44s %-8s %-8s %-6s %s\n", 'ID', 'ENV', 'NAME', 'URL', 'STATUS', 'ENABLED', 'GEN', 'LAST ERROR');
+        foreach ($servers as $server) {
+            printf("%-4d %-6s %-12s %-44s %-8s %-8s %-6s %s\n",
+                $server->id, $server->env, $server->name, $server->url, $server->status,
+                $server->enabled ? 'yes' : 'no', $server->generation_id ?? '-',
+                mb_substr((string)$server->last_error, 0, 60));
+        }
+        break;
+
+    case 'servers:add':
+        $name = $argv[2] ?? '';
+        $url = rtrim($argv[3] ?? '', '/');
+        if ($name === '' || !preg_match('#^https?://#', $url)) {
+            echo "Usage: php artisan servers:add <name> <url>   (url like http://10.0.0.5:8188)\n";
+            exit(1);
+        }
+        // offline: воркер сам проверит /queue и переведёт в free, если сервер живой.
+        // env — текущее окружение (config queue.env): сервер увидит только воркер этого окружения.
+        $server = \Api\db\AiServer::create([
+            'env' => \Api\Configurator::queueEnv(),
+            'name' => $name,
+            'url' => $url,
+            'status' => \Api\db\AiServer::STATUS_OFFLINE,
+        ]);
+        echo "Added server #{$server->id} [{$server->env}] {$name} {$url} (status offline until the worker health-checks it)\n";
+        break;
+
+    case 'servers:enable':
+    case 'servers:disable':
+        $server = \Api\db\AiServer::find((int)($argv[2] ?? 0));
+        if ($server === null) {
+            echo "Server not found. Usage: php artisan {$command} <id>\n";
+            exit(1);
+        }
+        $server->forceFill(['enabled' => $command === 'servers:enable'])->save();
+        echo "Server #{$server->id} {$server->name}: " . ($server->enabled ? 'enabled' : 'disabled') . "\n";
+        break;
+
     default:
-        echo "Usage: php artisan <migrate|migrate:rollback|migrate:refresh|migrate:status>\n";
+        echo "Usage: php artisan <migrate|migrate:rollback|migrate:refresh|migrate:status|queue:work|queue:tick|queue:status|servers:list|servers:add|servers:enable|servers:disable>\n";
         exit(1);
 }

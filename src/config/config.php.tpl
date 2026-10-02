@@ -25,6 +25,18 @@ return [
             'systemPromtGuest' => 'make funny'
         ]
     ],
+    // Очередь генераций (php artisan queue:work). Серверы ComfyUI — в таблице
+    // ai_servers (php artisan servers:add), comfyui.domain больше не используется.
+    'queue' => [
+        // БД общая для докера и прода, файлы фото — нет: воркер берёт только
+        // серверы и заказы своего окружения. Локально — 'local', на проде — 'prod'.
+        'env' => 'prod',
+        'pollInterval' => 2,          // сек между проходами воркера
+        'jobTimeout' => 600,          // сек — дольше считается зависшей, заказ уходит на другой сервер
+        'maxAttempts' => 3,           // попыток отдать заказ серверу, потом failed + возврат кредитов
+        'healthCheckInterval' => 30,  // сек — как часто проверять offline-серверы
+        'serverFailThreshold' => 3,   // ошибок опроса подряд — и сервер offline
+    ],
     'generate' => [
         'costBase' => 4,       // без описания
         'costWithPrompt' => 8, // с описанием

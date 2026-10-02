@@ -1,0 +1,21 @@
+# Воркер очереди генераций (php artisan queue:work).
+# Установка: см. DEPLOY.md, раздел "Очередь генераций".
+[Unit]
+Description=AI Gen generation queue worker
+# БД внешняя — ждём сеть, а не локальный mysql.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Тот же пользователь, что php-fpm: результаты в storage/ и logs/queue.log
+# должны принадлежать www-data.
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/ai-gen-api
+ExecStart=/usr/bin/php artisan queue:work
+# Воркер сам выходит раз в час (свежий код после git pull) — поднимаем.
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
