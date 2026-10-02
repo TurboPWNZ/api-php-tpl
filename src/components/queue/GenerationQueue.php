@@ -11,6 +11,7 @@ use Api\Configurator;
 use Api\db\AiServer;
 use Api\db\DatabaseManager;
 use Api\db\Generation;
+use Api\db\Template;
 use Carbon\Carbon;
 use Monolog\Logger;
 
@@ -254,9 +255,18 @@ class GenerationQueue
         $config = Configurator::getConfig();
         $workflowPath = Configurator::projectRoot() . '/' . ltrim((string)($config['comfyui']['i2i']['workflow'] ?? ''), '/');
 
+        // workflow шаблона заказа; заказы до шаблонов (template_id = null) —
+        // прежний файл из конфига.
+        $templateWorkflow = $generation->template_id
+            ? Template::query()->where('id', $generation->template_id)->value('workflow')
+            : null;
+
         $client = new ComfyUIClient($server->url);
         $uploaded = $client->uploadImage($sourceAbsPath, basename($sourceAbsPath));
-        $workflow = I2IWorkflow::build($workflowPath, $uploaded['name'], $this->fullPrompt($generation, $config));
+        $prompt = $this->fullPrompt($generation, $config);
+        $workflow = $templateWorkflow !== null
+            ? I2IWorkflow::buildFromJson($templateWorkflow, $uploaded['name'], $prompt)
+            : I2IWorkflow::build($workflowPath, $uploaded['name'], $prompt);
 
         return $client->queuePrompt($workflow);
     }

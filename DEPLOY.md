@@ -415,6 +415,35 @@ tail -f logs/queue.log
   возвращаются;
 - если упали все серверы, заказы просто ждут в очереди.
 
+## 7b. Шаблоны генерации
+
+Пользователь выбирает шаблон на главной (карточка «До → После»). Шаблон —
+строка в таблице `templates`: название, две цены (`cost` без описания,
+`cost_with_prompt` с описанием), системный промпт (`prompt`, для гостей —
+`prompt_guest`, пустой = как `prompt`), workflow ComfyUI (JSON с узлом
+`LoadImage` и плейсхолдером `{{user_promt}}`) и превью «до»/«после».
+
+Всё, включая картинки превью, хранится в БД — она общая для докера и прода,
+поэтому команды можно запускать и локально, с файлами со своего компьютера.
+Превью — JPEG/PNG/WebP до 1 МБ (GD на серверах нет, уменьшать заранее;
+квадратные, ~400–600 px). Отдаются через `GET /v1/template/{id}/preview/{before|after}`.
+
+```bash
+php artisan templates:list
+# шаблон из текущего конфига (workflow, systemPromt/systemPromtGuest, costBase/costWithPrompt) —
+# на проде запускать там, чтобы взялись прод-промпты:
+php artisan templates:import-default --name="Мультяшный" --before=before.jpg --after=after.jpg
+php artisan templates:add --name="Аниме" --cost=6 --cost-with-prompt=10 --prompt="anime style" \
+    --workflow=comfy/workflow/anime.json [--prompt-guest=...] [--before=... --after=...] [--sort=10]
+php artisan templates:set 1 --before=new_before.jpg --sort=5   # любые опции из templates:add
+php artisan templates:disable 2 / templates:enable 2
+```
+
+Порядок в списке — `sort`, потом `id`; первый доступный выбран по умолчанию
+и используется для клиентов без `template_id`. Пока шаблонов нет совсем,
+блок на главной скрыт, а заказы идут по-старому: цены и промпты из конфига,
+workflow — `comfyui.i2i.workflow`.
+
 ## 8. Мелочи по эксплуатации
 
 - **Логи** (`Api\components\Log`, `logs/*.log`) ничем не ротируются

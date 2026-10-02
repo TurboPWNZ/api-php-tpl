@@ -7,6 +7,7 @@ use Api\components\Storage;
 use Api\Configurator;
 use Api\db\DatabaseManager;
 use Api\db\Generation;
+use Api\db\Template;
 use Api\db\TelegramAccount;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -17,7 +18,8 @@ class GenerationController
     private const MAX_SIZE_BYTES = 20 * 1024 * 1024; // 20 МБ — как обещано на фронте
 
     /**
-     * POST /v1/generation/create — multipart/form-data: image (файл) + prompt (опционально).
+     * POST /v1/generation/create — multipart/form-data: image (файл), prompt и
+     * template_id (опционально; без него — шаблон по умолчанию, первый доступный).
      * Списывает стоимость, сохраняет фото и ставит заказ в очередь
      * (generations.status=queued). Воркер очереди отдаёт его свободному
      * ИИ-серверу; результат фронт ждёт через GET /v1/generation/status/{id}.
@@ -45,10 +47,21 @@ class GenerationController
 
         $userPrompt = trim((string)$request->request->get('prompt', ''));
 
+        $templateId = (int)$request->request->get('template_id', 0);
+        $template = $templateId
+            ? Template::withoutBlobs()->where('enabled', true)->find($templateId)
+            : Template::defaultTemplate();
+        if ($templateId && $template === null) {
+            return new JsonResponse(['success' => false, 'errors' => ['Template not found']], 400);
+        }
+
+        // Ни одного шаблона ещё нет (или клиент без template_id при пустой
+        // таблице) — прежнее поведение: цены и промпты из конфига, workflow
+        // из comfyui.i2i.workflow (GenerationQueue при template_id = null).
         $config = Configurator::getConfig();
-        $cost = $userPrompt !== ''
-            ? (float)($config['generate']['costWithPrompt'] ?? 8)
-            : (float)($config['generate']['costBase'] ?? 4);
+        $cost = $template !== null
+            ? $template->costFor($userPrompt !== '')
+            : (float)($userPrompt !== '' ? ($config['generate']['costWithPrompt'] ?? 8) : ($config['generate']['costBase'] ?? 4));
 
         $account = TelegramAccount::findByTelegramId($userId);
         if ($account === null) {
@@ -86,15 +99,17 @@ class GenerationController
             return new JsonResponse(['success' => false, 'errors' => ['Generation service is unavailable']], 502);
         }
 
-        // Гостю (ни разу не пополнял баланс) — systemPromtGuest, платящему
-        // клиенту — обычный systemPromt (см. TelegramAccount::isGuest()).
-        // Считается сейчас, на момент заказа, и хранится в full_prompt.
-        $systemPromptKey = $account->isGuest() ? 'systemPromtGuest' : 'systemPromt';
-        $systemPrompt = (string)($config['comfyui']['i2i'][$systemPromptKey] ?? $config['comfyui']['i2i']['systemPromt'] ?? '');
+        // Гостю (ни разу не пополнял баланс) — prompt_guest шаблона, платящему
+        // клиенту — prompt (см. TelegramAccount::isGuest()). Считается сейчас,
+        // на момент заказа, и хранится в full_prompt.
+        $systemPrompt = $template !== null
+            ? $template->systemPromptFor($account->isGuest())
+            : (string)($config['comfyui']['i2i'][$account->isGuest() ? 'systemPromtGuest' : 'systemPromt'] ?? $config['comfyui']['i2i']['systemPromt'] ?? '');
 
         $generation = Generation::create([
             'user_id' => $userId,
             'env' => Configurator::queueEnv(),
+            'template_id' => $template?->id,
             'status' => Generation::STATUS_QUEUED,
             'prompt' => $userPrompt !== '' ? $userPrompt : null,
             'full_prompt' => $userPrompt !== '' ? "{$systemPrompt}, {$userPrompt}" : $systemPrompt,
@@ -103,7 +118,7 @@ class GenerationController
         ]);
 
         Log::get(Log::DEBUG)->info('Generation queued', [
-            'user_id' => $userId, 'generation_id' => $generation->id, 'cost' => $cost,
+            'user_id' => $userId, 'generation_id' => $generation->id, 'template_id' => $template?->id, 'cost' => $cost,
         ]);
 
         return new JsonResponse([

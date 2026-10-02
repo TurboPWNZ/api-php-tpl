@@ -20,6 +20,16 @@
  *                                          (в окружение из config queue.env)
  *   php artisan servers:enable <id>
  *   php artisan servers:disable <id>     — не получает новых заказов, текущий досчитает
+ *
+ * Шаблоны генерации (templates; БД общая — можно запускать и локально):
+ *   php artisan templates:list
+ *   php artisan templates:import-default --name=... [--before=f --after=f]
+ *       — шаблон из текущего конфига (comfyui.i2i.workflow, systemPromt[Guest],
+ *         generate.costBase/costWithPrompt)
+ *   php artisan templates:add --name=... --cost=4 --cost-with-prompt=8 --prompt=... \
+ *       --workflow=comfy/workflow/x.json [--prompt-guest=...] [--before=f --after=f] [--sort=N]
+ *   php artisan templates:set <id> [любые опции из templates:add]
+ *   php artisan templates:enable <id> / templates:disable <id>
  */
 
 require __DIR__ . '/vendor/autoload.php';
@@ -62,6 +72,44 @@ $paths = [__DIR__ . '/database/migrations'];
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 $command = $argv[1] ?? 'migrate';
+
+/** --key=value аргументы (для templates:*). */
+function artisanOptions(array $argv): array
+{
+    $options = [];
+    foreach (array_slice($argv, 2) as $arg) {
+        if (preg_match('/^--([a-z-]+)=(.*)$/s', $arg, $m)) {
+            $options[$m[1]] = $m[2];
+        }
+    }
+
+    return $options;
+}
+
+/** Применяет опции templates:add/set к шаблону. @throws InvalidArgumentException */
+function applyTemplateOptions(\Api\db\Template $template, array $opts): void
+{
+    $map = ['name' => 'name', 'cost' => 'cost', 'cost-with-prompt' => 'cost_with_prompt',
+        'prompt' => 'prompt', 'prompt-guest' => 'prompt_guest', 'sort' => 'sort'];
+    foreach ($map as $opt => $column) {
+        if (array_key_exists($opt, $opts)) {
+            $template->{$column} = $opts[$opt] === '' && $opt === 'prompt-guest' ? null : $opts[$opt];
+        }
+    }
+    foreach (['cost', 'cost-with-prompt'] as $opt) {
+        if (array_key_exists($opt, $opts) && (!is_numeric($opts[$opt]) || $opts[$opt] < 0)) {
+            throw new InvalidArgumentException("--{$opt} must be a non-negative number");
+        }
+    }
+    if (isset($opts['workflow'])) {
+        $template->workflow = \Api\db\Template::readWorkflowFile($opts['workflow']);
+    }
+    foreach (['before', 'after'] as $side) {
+        if (isset($opts[$side])) {
+            $template->setPreviewFromFile($side, $opts[$side]);
+        }
+    }
+}
 
 switch ($command) {
     case 'migrate':
@@ -193,7 +241,82 @@ switch ($command) {
         echo "Server #{$server->id} {$server->name}: " . ($server->enabled ? 'enabled' : 'disabled') . "\n";
         break;
 
+    case 'templates:list':
+        $templates = \Api\db\Template::withoutBlobs()->orderBy('sort')->orderBy('id')->get();
+        if ($templates->isEmpty()) {
+            echo "No templates. Create one: php artisan templates:import-default --name=...\n";
+            break;
+        }
+        printf("%-4s %-5s %-24s %-8s %-8s %-8s %-6s %-6s %s\n", 'ID', 'SORT', 'NAME', 'ENABLED', 'COST', '+PROMPT', 'BEFORE', 'AFTER', 'PROMPT');
+        foreach ($templates as $template) {
+            // printf считает байты — кириллическое имя добиваем пробелами сами.
+            $name = mb_substr($template->name, 0, 24);
+            printf("%-4d %-5d %s %-8s %-8s %-8s %-6s %-6s %s\n",
+                $template->id, $template->sort, $name . str_repeat(' ', 24 - mb_strlen($name)), $template->enabled ? 'yes' : 'no',
+                $template->cost, $template->cost_with_prompt,
+                $template->preview_before_mime ? 'yes' : '-', $template->preview_after_mime ? 'yes' : '-',
+                mb_substr($template->prompt, 0, 50));
+        }
+        break;
+
+    case 'templates:import-default':
+    case 'templates:add':
+        $opts = artisanOptions($argv);
+        if ($command === 'templates:import-default') {
+            $cfg = \Api\Configurator::getConfig();
+            $opts += [
+                'workflow' => __DIR__ . '/' . ltrim((string)($cfg['comfyui']['i2i']['workflow'] ?? ''), '/'),
+                'prompt' => (string)($cfg['comfyui']['i2i']['systemPromt'] ?? ''),
+                'prompt-guest' => (string)($cfg['comfyui']['i2i']['systemPromtGuest'] ?? ''),
+                'cost' => (string)($cfg['generate']['costBase'] ?? 4),
+                'cost-with-prompt' => (string)($cfg['generate']['costWithPrompt'] ?? 8),
+            ];
+        }
+        foreach (['name', 'cost', 'cost-with-prompt', 'prompt', 'workflow'] as $required) {
+            if (!isset($opts[$required]) || $opts[$required] === '') {
+                echo "Missing --{$required}. See the usage at the top of artisan.\n";
+                exit(1);
+            }
+        }
+        $template = new \Api\db\Template(['enabled' => true]);
+        try {
+            applyTemplateOptions($template, $opts);
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage() . "\n";
+            exit(1);
+        }
+        $template->save();
+        echo "Created template #{$template->id} {$template->name}\n";
+        break;
+
+    case 'templates:set':
+        $template = \Api\db\Template::find((int)($argv[2] ?? 0));
+        if ($template === null) {
+            echo "Template not found. Usage: php artisan templates:set <id> --option=value ...\n";
+            exit(1);
+        }
+        try {
+            applyTemplateOptions($template, artisanOptions($argv));
+        } catch (InvalidArgumentException $e) {
+            echo $e->getMessage() . "\n";
+            exit(1);
+        }
+        $template->save();
+        echo "Updated template #{$template->id} {$template->name}\n";
+        break;
+
+    case 'templates:enable':
+    case 'templates:disable':
+        $template = \Api\db\Template::find((int)($argv[2] ?? 0));
+        if ($template === null) {
+            echo "Template not found. Usage: php artisan {$command} <id>\n";
+            exit(1);
+        }
+        $template->forceFill(['enabled' => $command === 'templates:enable'])->save();
+        echo "Template #{$template->id} {$template->name}: " . ($template->enabled ? 'enabled' : 'disabled') . "\n";
+        break;
+
     default:
-        echo "Usage: php artisan <migrate|migrate:rollback|migrate:refresh|migrate:status|queue:work|queue:tick|queue:status|servers:list|servers:add|servers:enable|servers:disable>\n";
+        echo "Usage: php artisan <migrate|migrate:rollback|migrate:refresh|migrate:status|queue:work|queue:tick|queue:status|servers:list|servers:add|servers:enable|servers:disable|templates:list|templates:add|templates:import-default|templates:set|templates:enable|templates:disable>\n";
         exit(1);
 }

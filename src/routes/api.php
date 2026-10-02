@@ -141,6 +141,22 @@ return FastRoute\simpleDispatcher(function(RouteCollector $r) {
             }
     ]);
 
+    $r->get('/v1/template/list', [
+        'handler' => 'TemplateController@list',
+        'middleware' =>
+            function (\Symfony\Component\HttpFoundation\Request $request) {
+                $authResult = \Api\Middleware::auth($request);
+                if ($authResult !== true) {
+                    return $authResult;
+                }
+
+                return true;
+            }
+    ]);
+
+    // Без JWT — это <img src> (см. TemplateController::preview).
+    $r->get('/v1/template/{id:\d+}/preview/{side:before|after}', 'TemplateController@preview');
+
     // Вебхук провайдеров оплаты, включая Telegram Bot API (TelegramStars) —
     // без JWT-мидлвари: Telegram аутентифицируется секретом из setWebhook
     // (см. TelegramStars::verifyCallback / NotificationController).

@@ -24,6 +24,7 @@ class Generation extends Model
     protected $fillable = [
         'user_id',
         'env',
+        'template_id',
         'status',
         'prompt',
         'full_prompt',
@@ -38,6 +39,7 @@ class Generation extends Model
         'user_id'     => 'int',
         'cost'        => 'float',
         'server_id'   => 'int',
+        'template_id' => 'int',
         'attempts'    => 'int',
         'started_at'  => 'datetime',
         'finished_at' => 'datetime',
@@ -124,6 +126,7 @@ class Generation extends Model
     {
         return [
             'id' => $this->id,
+            'templateId' => $this->template_id,
             'status' => $this->status,
             'prompt' => $this->prompt,
             'cost' => (float)$this->cost,

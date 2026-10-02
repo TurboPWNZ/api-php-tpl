@@ -31,11 +31,24 @@ class I2IWorkflow
             throw new \RuntimeException("Workflow template not found: {$templatePath}");
         }
 
-        $raw = str_replace('{{user_promt}}', $prompt, $raw);
+        return self::buildFromJson($raw, $imageFilename, $prompt);
+    }
+
+    /**
+     * То же, что build(), но workflow уже строкой (templates.workflow в БД).
+     *
+     * @throws \RuntimeException
+     */
+    public static function buildFromJson(string $raw, string $imageFilename, string $prompt): array
+    {
+        // Промпт подставляется внутрь JSON-строки — экранируем как JSON
+        // (без внешних кавычек), иначе кавычка/перевод строки в описании
+        // пользователя ломают весь workflow.
+        $raw = str_replace('{{user_promt}}', substr(json_encode($prompt, JSON_UNESCAPED_UNICODE), 1, -1), $raw);
 
         $graph = json_decode($raw, true);
         if (!is_array($graph)) {
-            throw new \RuntimeException("Workflow template is not valid JSON: {$templatePath}");
+            throw new \RuntimeException('Workflow template is not valid JSON');
         }
 
         $hasLoadImage = false;
