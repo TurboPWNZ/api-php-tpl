@@ -3,9 +3,14 @@
 namespace Api\db;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Generation extends Model
 {
+    // Удалённые пользователем генерации скрыты из всех запросов (list,
+    // status, find) — глобальный скоуп SoftDeletes.
+    use SoftDeletes;
+
     const STATUS_PROCESSING = 'processing';
     const STATUS_READY      = 'ready';
     const STATUS_FAILED     = 'failed';

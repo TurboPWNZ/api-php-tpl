@@ -211,6 +211,42 @@ class GenerationController
         return new JsonResponse(['success' => true, 'data' => $items]);
     }
 
+    /**
+     * DELETE /v1/generation/{id} — пользователь удаляет свою генерацию.
+     * Запись помечается deleted_at (история списаний сохраняется), файлы
+     * оригинала и результата удаляются с диска. Генерацию в процессе удалять
+     * нельзя: status() по ней ещё может сделать refund/markReady.
+     */
+    public function delete(Request $request, string $id): JsonResponse
+    {
+        $userId = (int)($request->attributes->get('user')['user_id'] ?? 0);
+
+        $generation = Generation::find((int)$id);
+        if ($generation === null || (int)$generation->user_id !== $userId) {
+            return new JsonResponse(['success' => false, 'errors' => ['Generation not found']], 404);
+        }
+
+        if ($generation->status === Generation::STATUS_PROCESSING) {
+            return new JsonResponse(['success' => false, 'errors' => ['Generation is in progress']], 409);
+        }
+
+        $generation->delete();
+
+        foreach (array_filter([$generation->source_path, $generation->result_path]) as $path) {
+            if (!Storage::deleteFile($path)) {
+                Log::get(Log::DEBUG)->warning('Generation file delete failed', [
+                    'generation_id' => $generation->id, 'path' => $path,
+                ]);
+            }
+        }
+
+        Log::get(Log::DEBUG)->info('Generation deleted', [
+            'user_id' => $userId, 'generation_id' => $generation->id,
+        ]);
+
+        return new JsonResponse(['success' => true]);
+    }
+
     private function refund(Generation $generation): void
     {
         // generations.user_id хранит telegram_id (как payments.user_id) —

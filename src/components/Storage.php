@@ -37,6 +37,26 @@ class Storage
         return [$absolute, $relative];
     }
 
+    /**
+     * Удаляет файл по относительному пути из БД ("uploads/123/xxx.jpg").
+     * Путь проверяется на нахождение внутри /storage — на случай мусора в БД.
+     * Отсутствующий файл не ошибка (уже удалён) — возвращает true.
+     */
+    public static function deleteFile(string $relativePath): bool
+    {
+        $root = realpath(self::root());
+        $absolute = realpath(self::root() . '/' . ltrim($relativePath, '/'));
+
+        if ($absolute === false) {
+            return true;
+        }
+        if ($root === false || !str_starts_with($absolute, $root . '/') || !is_file($absolute)) {
+            return false;
+        }
+
+        return unlink($absolute);
+    }
+
     public static function randomFilename(string $originalName, string $fallbackExt = 'jpg'): string
     {
         $ext = strtolower((string)pathinfo($originalName, PATHINFO_EXTENSION));
